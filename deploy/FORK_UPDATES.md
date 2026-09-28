@@ -10,6 +10,9 @@
 
 ## 发布
 
+多个二开功能的集成方式和社区升级步骤见 [二开维护规则](../DOWNSTREAM.md)。
+正式发布统一从 `release/<社区版本>` 分支创建 tag，功能分支先合入该分支。
+
 先在 fork 的 Actions 页面启用工作流。x86_64 服务器可设置仓库 Actions
 变量 `SIMPLE_RELEASE=true`；ARM64 服务器使用完整发布。
 
@@ -17,13 +20,14 @@
 Linux amd64。后台不会从 GHCR 下载镜像，而是下载 GitHub Release 的二进制包。
 Release 及附件必须能被部署服务器访问；当前附件下载不携带私有仓库的认证令牌。
 
-在包含本补丁、已提交并验证的集成分支上：
+例如在 `release/0.2.9` 完成下一次修改、提交并验证后：
 
 ```bash
-git push -u origin HEAD
+git switch release/0.2.9
+git push -u origin release/0.2.9
 # 等待当前提交的 CI 通过后，再推送发布 tag。
-git tag -a v0.2.9-zy.1 -m "基于社区 v0.2.9，支持 fork 后台更新"
-git push origin v0.2.9-zy.1
+git tag -a v0.2.9-zy.2 -m "基于社区 v0.2.9，发布本次集成的二开功能"
+git push origin v0.2.9-zy.2
 ```
 
 tag 推送触发的 Release 工作流会使用这个 tag 中的发布工具。
