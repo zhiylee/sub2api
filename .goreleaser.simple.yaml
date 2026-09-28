@@ -1,4 +1,4 @@
-# 简化版 GoReleaser 配置 - 仅发布 x86_64 GHCR 镜像
+# 简化版 GoReleaser 配置 - 发布 x86_64 GHCR 镜像及后台更新产物
 version: 2
 
 project_name: sub2api
@@ -26,12 +26,14 @@ builds:
       - -X main.Date={{.Date}}
       - -X main.BuildType=release
 
-# 跳过 archives
-archives: []
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
-# 跳过 checksum
 checksum:
-  disable: true
+  name_template: checksums.txt
+  algorithm: sha256
 
 changelog:
   disable: true
@@ -66,11 +68,10 @@ release:
   draft: false
   prerelease: auto
   name_template: "Sub2API {{.Version}} (Simple)"
-  # 跳过上传二进制包
-  skip_upload: true
+  skip_upload: false
   header: |
     > AI API Gateway Platform - 将 AI 订阅配额分发和管理
-    > ⚡ Simple Release: 仅包含 x86_64 GHCR 镜像
+    > ⚡ Simple Release: 包含 Linux x86_64 GHCR 镜像、二进制包及校验文件，支持后台更新
 
     {{ .Env.TAG_MESSAGE }}
 
