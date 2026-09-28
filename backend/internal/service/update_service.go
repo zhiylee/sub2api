@@ -15,11 +15,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"golang.org/x/mod/semver"
 )
 
 var (
@@ -30,7 +30,7 @@ var (
 const (
 	updateCacheKey = "update_check_cache"
 	updateCacheTTL = 1200 // 20 minutes
-	githubRepo     = "Wei-Shaw/sub2api"
+	githubRepo     = "zhiylee/sub2api"
 
 	// Security: allowed download domains for updates
 	allowedDownloadHost = "github.com"
@@ -375,7 +375,7 @@ func (s *UpdateService) fetchRollbackCandidates(ctx context.Context) ([]*GitHubR
 			continue
 		}
 		v := strings.TrimPrefix(r.TagName, "v")
-		if v == "" || seen[v] {
+		if !semver.IsValid("v"+v) || seen[v] {
 			continue
 		}
 		// Only versions strictly older than current (also excludes current itself)
@@ -403,6 +403,9 @@ func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, er
 	release, err := s.githubClient.FetchLatestRelease(ctx, githubRepo)
 	if err != nil {
 		return nil, err
+	}
+	if release == nil || release.Draft || release.Prerelease || !semver.IsValid(release.TagName) {
+		return nil, fmt.Errorf("no valid stable release found in %s", githubRepo)
 	}
 
 	latestVersion := strings.TrimPrefix(release.TagName, "v")
@@ -600,12 +603,18 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 	}
 
 	var cached struct {
+		Repository  string       `json:"repository"`
 		Latest      string       `json:"latest"`
 		ReleaseInfo *ReleaseInfo `json:"release_info"`
 		Timestamp   int64        `json:"timestamp"`
 	}
 	if err := json.Unmarshal([]byte(data), &cached); err != nil {
 		return nil, err
+	}
+	// Older installations cached community releases under the same Redis key.
+	// Never offer those assets after switching to this distribution.
+	if cached.Repository != githubRepo {
+		return nil, fmt.Errorf("update cache repository mismatch")
 	}
 
 	if time.Now().Unix()-cached.Timestamp > updateCacheTTL {
@@ -624,10 +633,12 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 
 func (s *UpdateService) saveToCache(ctx context.Context, info *UpdateInfo) {
 	cacheData := struct {
+		Repository  string       `json:"repository"`
 		Latest      string       `json:"latest"`
 		ReleaseInfo *ReleaseInfo `json:"release_info"`
 		Timestamp   int64        `json:"timestamp"`
 	}{
+		Repository:  githubRepo,
 		Latest:      info.LatestVersion,
 		ReleaseInfo: info.ReleaseInfo,
 		Timestamp:   time.Now().Unix(),
@@ -637,33 +648,19 @@ func (s *UpdateService) saveToCache(ctx context.Context, info *UpdateInfo) {
 	_ = s.cache.SetUpdateInfo(ctx, string(data), time.Duration(updateCacheTTL)*time.Second)
 }
 
-// compareVersions compares two semantic versions
+// compareVersions uses SemVer ordering, including numeric zy revisions.
+// A bare community version is revision zero of the same downstream base, so
+// the initial community -> zy.1 transition is offered as an update as well.
 func compareVersions(current, latest string) int {
-	currentParts := parseVersion(current)
-	latestParts := parseVersion(latest)
-
-	for i := 0; i < 3; i++ {
-		if currentParts[i] < latestParts[i] {
-			return -1
+	current = "v" + strings.TrimPrefix(current, "v")
+	latest = "v" + strings.TrimPrefix(latest, "v")
+	if semver.IsValid(current) && semver.IsValid(latest) {
+		if semver.Prerelease(current) == "" && strings.HasPrefix(semver.Prerelease(latest), "-zy.") {
+			current = semver.Canonical(current) + "-zy.0"
 		}
-		if currentParts[i] > latestParts[i] {
-			return 1
-		}
-	}
-	return 0
-}
-
-func parseVersion(v string) [3]int {
-	v = strings.TrimPrefix(v, "v")
-	if idx := strings.IndexByte(v, '-'); idx != -1 {
-		v = v[:idx]
-	}
-	parts := strings.Split(v, ".")
-	result := [3]int{0, 0, 0}
-	for i := 0; i < len(parts) && i < 3; i++ {
-		if parsed, err := strconv.Atoi(parts[i]); err == nil {
-			result[i] = parsed
+		if semver.Prerelease(latest) == "" && strings.HasPrefix(semver.Prerelease(current), "-zy.") {
+			latest = semver.Canonical(latest) + "-zy.0"
 		}
 	}
-	return result
+	return semver.Compare(current, latest)
 }

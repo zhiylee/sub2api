@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -31,13 +32,18 @@ type updateServiceGitHubClientStub struct {
 	release        *GitHubRelease
 	recentReleases []*GitHubRelease
 	recentErr      error
+	latestErr      error
+	latestRepo     string
+	recentRepo     string
 }
 
-func (s *updateServiceGitHubClientStub) FetchLatestRelease(context.Context, string) (*GitHubRelease, error) {
-	return s.release, nil
+func (s *updateServiceGitHubClientStub) FetchLatestRelease(_ context.Context, repo string) (*GitHubRelease, error) {
+	s.latestRepo = repo
+	return s.release, s.latestErr
 }
 
-func (s *updateServiceGitHubClientStub) FetchRecentReleases(context.Context, string, int) ([]*GitHubRelease, error) {
+func (s *updateServiceGitHubClientStub) FetchRecentReleases(_ context.Context, repo string, _ int) ([]*GitHubRelease, error) {
+	s.recentRepo = repo
 	return s.recentReleases, s.recentErr
 }
 
@@ -184,4 +190,112 @@ func TestUpdateServiceRollbackToVersionAcceptsVPrefix(t *testing.T) {
 	require.Error(t, err)
 	require.NotErrorIs(t, err, ErrRollbackVersionNotAllowed)
 	require.Contains(t, err.Error(), "no compatible release found")
+}
+
+func TestCompareVersionsForkRevisions(t *testing.T) {
+	for _, tc := range []struct {
+		current, latest string
+		want            int
+	}{
+		{"0.2.9-zy.1", "0.2.9-zy.2", -1},
+		{"v0.2.9-zy.2", "v0.2.9-zy.10", -1},
+		{"0.2.9-zy.99", "0.2.10-zy.1", -1},
+		{"0.2.10-zy.1", "0.2.9-zy.99", 1},
+		{"0.2.9-zy.1", "v0.2.9-zy.1", 0},
+		{"0.2.9", "0.2.9-zy.1", -1},
+		{"0.2.9-zy.1", "0.2.9", 1},
+		{"0.2.9+build", "0.2.9-zy.1", -1},
+		{"0.2.9-zy.1+build", "0.2.9-zy.1", 0},
+		{"0.2.9", "0.2.10", -1},
+		{"0.2.9-rc.1", "0.2.9", -1},
+	} {
+		t.Run(tc.current+"_to_"+tc.latest, func(t *testing.T) {
+			require.Equal(t, tc.want, compareVersions(tc.current, tc.latest))
+		})
+	}
+}
+
+func TestUpdateServiceForkDetectionAndCache(t *testing.T) {
+	client := &updateServiceGitHubClientStub{release: &GitHubRelease{
+		TagName: "v0.2.9-zy.10",
+		HTMLURL: "https://github.com/zhiylee/sub2api/releases/tag/v0.2.9-zy.10",
+	}}
+	cache := &updateServiceCacheStub{}
+	svc := NewUpdateService(cache, client, "0.2.9-zy.2", "release")
+	info, err := svc.CheckUpdate(context.Background(), true)
+	require.NoError(t, err)
+	require.True(t, info.HasUpdate)
+	require.Equal(t, "0.2.9-zy.10", info.LatestVersion)
+	require.Equal(t, "zhiylee/sub2api", client.latestRepo)
+
+	client.latestErr = errors.New("offline")
+	cached, err := svc.CheckUpdate(context.Background(), false)
+	require.NoError(t, err)
+	require.True(t, cached.Cached)
+	require.True(t, cached.HasUpdate)
+	require.Equal(t, info.ReleaseInfo.HTMLURL, cached.ReleaseInfo.HTMLURL)
+
+	// A restart on the installed version must no longer report an update even
+	// while sharing the previously populated Redis cache.
+	restarted := NewUpdateService(cache, client, "0.2.9-zy.10", "release")
+	current, err := restarted.CheckUpdate(context.Background(), false)
+	require.NoError(t, err)
+	require.False(t, current.HasUpdate)
+}
+
+func TestUpdateServiceRejectsCommunityCacheEvenOnFetchFailure(t *testing.T) {
+	for _, repo := range []string{"", "Wei-Shaw/sub2api"} {
+		t.Run(repo, func(t *testing.T) {
+			data, err := json.Marshal(map[string]any{
+				"repository": repo, "latest": "99.0.0", "timestamp": time.Now().Unix(),
+			})
+			require.NoError(t, err)
+			cache := &updateServiceCacheStub{data: string(data)}
+			client := &updateServiceGitHubClientStub{latestErr: errors.New("offline")}
+			svc := NewUpdateService(cache, client, "0.2.9-zy.1", "release")
+			info, err := svc.CheckUpdate(context.Background(), true)
+			require.NoError(t, err)
+			require.False(t, info.HasUpdate)
+			require.False(t, info.Cached)
+			require.Nil(t, info.ReleaseInfo)
+			require.Contains(t, info.Warning, "offline")
+		})
+	}
+}
+
+func TestUpdateServiceRejectsInvalidLatestRelease(t *testing.T) {
+	for _, release := range []*GitHubRelease{
+		nil, {TagName: "main"}, {TagName: "v0.2.9-zy.2", Draft: true},
+		{TagName: "v0.2.9-zy.2-rc.1", Prerelease: true},
+	} {
+		svc := NewUpdateService(&updateServiceCacheStub{}, &updateServiceGitHubClientStub{release: release}, "0.2.9-zy.1", "release")
+		info, err := svc.CheckUpdate(context.Background(), true)
+		require.NoError(t, err)
+		require.False(t, info.HasUpdate)
+		require.NotEmpty(t, info.Warning)
+	}
+}
+
+func TestUpdateServiceForkRollbackOrdering(t *testing.T) {
+	client := &updateServiceGitHubClientStub{recentReleases: []*GitHubRelease{
+		{TagName: "v0.2.9-zy.2"},
+		{TagName: "v0.2.9-zy.11"},
+		{TagName: "v0.2.9-zy.9", Prerelease: true},
+		{TagName: "v0.2.9-zy.10"},
+		{TagName: "v0.2.10-zy.1"},
+		{TagName: "v0.2.9-zy.1"},
+		{TagName: "v0.2.9-zy.3", Draft: true},
+		{TagName: "invalid"},
+	}}
+	svc := NewUpdateService(&updateServiceCacheStub{}, client, "0.2.9-zy.11", "release")
+	versions, err := svc.ListRollbackVersions(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "zhiylee/sub2api", client.recentRepo)
+	require.Equal(t, []RollbackVersion{
+		{Version: "0.2.9-zy.10"}, {Version: "0.2.9-zy.2"}, {Version: "0.2.9-zy.1"},
+	}, versions)
+	// The chosen revision must reach asset lookup, not be rejected as equal.
+	err = svc.RollbackToVersion(context.Background(), "v0.2.9-zy.10")
+	require.ErrorContains(t, err, "no compatible release found")
+	require.NotErrorIs(t, err, ErrRollbackVersionNotAllowed)
 }

@@ -80,11 +80,22 @@ class ReleaseMatrixTest(unittest.TestCase):
                 self.assertFalse(data['dockers'])
                 self.assertEqual(data['release']['header'], original['release']['header'])
                 self.assertEqual(data['release']['footer'], original['release']['footer'])
-                if simple:
-                    self.assertTrue(data['checksum']['disable'])
-                    self.assertTrue(data['release']['skip_upload'])
-                else:
-                    self.assertEqual(data['checksum']['extra_files'], data['release']['extra_files'])
+                self.assertFalse(data['release']['skip_upload'])
+                self.assertEqual(data['checksum']['name_template'], 'checksums.txt')
+                self.assertEqual(data['checksum']['extra_files'], data['release']['extra_files'])
+                self.assertIn({'glob': 'release-input/sub2api_*.tar.gz'}, data['release']['extra_files'])
+
+    def test_fork_release_is_stable_but_rc_remains_prerelease(self):
+        for simple in (False, True):
+            for version in ('0.2.9-zy.1', '0.2.9-zy.10', '0.2.9-rc.1', '0.2.9-zy.2-rc.1'):
+                with self.subTest(simple=simple, version=version), patch.dict(os.environ, {'RELEASE_VERSION': version}):
+                    release.generate_config(argparse.Namespace(mode='publish', simple=simple, output='publisher.yaml'))
+                    data = yaml.safe_load(Path('publisher.yaml').read_text())
+                    if 'rc' in version:
+                        self.assertEqual(data['release']['prerelease'], 'auto')
+                    else:
+                        self.assertIs(data['release']['prerelease'], False)
+                        self.assertIs(data['release']['make_latest'], True)
 
     def test_collect_and_verify_hash_and_source_binding(self):
         args = self.fixture_artifacts()
@@ -138,6 +149,15 @@ class ReleaseMatrixTest(unittest.TestCase):
         self.assertEqual(output['dry_run'], 'true')
         self.assertEqual(output['owner_lower'], 'exampleowner')
         self.assertEqual(len(json.loads(output['matrix'])['include']), 5)
+
+    def test_fork_tag_preserves_revision_in_version_and_archive(self):
+        with patch.dict(os.environ, {'GITHUB_OUTPUT': 'outputs', 'GITHUB_REPOSITORY_OWNER': 'zhiylee'}), patch.object(subprocess, 'check_output', return_value='a' * 40 + '\n'):
+            release.plan(argparse.Namespace(ref='v0.2.9-zy.10', dry_run=False, simple=True))
+        output = dict(line.split('=', 1) for line in Path('outputs').read_text().splitlines())
+        self.assertEqual(output['version'], '0.2.9-zy.10')
+        self.assertEqual(release.VERSION_FILE.read_text(), '0.2.9-zy.10\n')
+        self.assertEqual(release.archive_name(output['version'], {'goos': 'linux', 'goarch': 'amd64'}),
+                         'sub2api_0.2.9-zy.10_linux_amd64.tar.gz')
 
     def test_docker_commands_do_not_publish_during_dry_run(self):
         fake_bin = Path('bin')
