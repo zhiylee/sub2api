@@ -384,10 +384,21 @@ jobs:
     env:
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
     steps:
-      - name: Checkout default branch
+      - name: Select version synchronization branch
+        id: version_branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [[ "$RELEASE_VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-zy\.[1-9][0-9]*$ ]]; then
+            echo "branch=release/${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch=$DEFAULT_BRANCH" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout version synchronization branch
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ steps.version_branch.outputs.branch }}
 
       - name: Sync VERSION file to released tag
         run: |
@@ -405,4 +416,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add backend/cmd/server/VERSION
           git commit -m "chore: sync VERSION to ${VERSION} [skip ci]"
-          git push origin HEAD:${{ github.event.repository.default_branch }}
+          git push origin HEAD:${{ steps.version_branch.outputs.branch }}
