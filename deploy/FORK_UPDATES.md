@@ -1,7 +1,7 @@
 # 自定义版本与后台更新
 
 本 fork 的后台更新源为 `zhiylee/sub2api`，版本格式为
-`v<社区版本>-zy.<修订号>`，例如 `v0.2.9-zy.1`。
+`v<社区版本>-zy.<修订号>`，当前版本为 `v0.2.11-zy.1`。
 
 - 同一社区基线每次发布递增修订号；切换社区基线后从 `zy.1` 开始。
 - 修订号按数字比较：`zy.2 < zy.10`；社区版本优先于修订号。
@@ -20,27 +20,28 @@
 Linux amd64。后台不会从 GHCR 下载镜像，而是下载 GitHub Release 的二进制包。
 Release 及附件必须能被部署服务器访问；当前附件下载不携带私有仓库的认证令牌。
 
-例如在 `release/0.2.9` 完成下一次修改、提交并验证后：
+例如在 `release/0.2.11` 完成下一次修改、提交并验证后：
 
 ```bash
-git switch release/0.2.9
-git push -u origin release/0.2.9
+git switch release/0.2.11
+git push -u origin release/0.2.11
 # 等待当前提交的 CI 通过后，再推送发布 tag。
-git tag -a v0.2.9-zy.2 -m "基于社区 v0.2.9，发布本次集成的二开功能"
-git push origin v0.2.9-zy.2
+git tag -a v0.2.11-zy.2 -m "基于社区 v0.2.11，发布本次集成的二开功能"
+git push origin v0.2.11-zy.2
 ```
 
 tag 推送触发的 Release 工作流会使用这个 tag 中的发布工具。
 发布工具只对精确的 `X.Y.Z-zy.N`（N 为正整数）设置
 `prerelease: false` 和 `make_latest: true`，其他预发布标签保留上游策略。
 直接运行原始 GoReleaser YAML 不会经过这项处理，正式发布应使用 Release 工作流。
+fork 发布成功后 VERSION 同步到对应的 `release/<社区版本>` 分支。
 
 发布成功后应有：
 
-- 正式 GitHub Release，例如 `v0.2.9-zy.1`，标记为 Latest。
-- `sub2api_0.2.9-zy.1_linux_amd64.tar.gz`（完整发布另有其他平台）。
+- 正式 GitHub Release，例如 `v0.2.11-zy.1`，标记为 Latest。
+- `sub2api_0.2.11-zy.1_linux_amd64.tar.gz`（完整发布另有其他平台）。
 - `checksums.txt`，其中包含对应压缩包的 SHA256。
-- 镜像 `ghcr.io/zhiylee/sub2api:0.2.9-zy.1`。
+- 镜像 `ghcr.io/zhiylee/sub2api:0.2.11-zy.1`。
 
 ## 首次部署到 Docker Compose
 
@@ -49,7 +50,7 @@ tag 推送触发的 Release 工作流会使用这个 tag 中的发布工具。
 ```yaml
 services:
   sub2api:
-    image: ghcr.io/zhiylee/sub2api:0.2.9-zy.1
+    image: ghcr.io/zhiylee/sub2api:0.2.11-zy.1
 ```
 
 以下假定原文件名为 `docker-compose.yml`、数据库和 Redis 已运行。
@@ -62,11 +63,12 @@ docker compose -f docker-compose.yml -f docker-compose.fork.yml up -d --no-deps 
 docker compose -f docker-compose.yml -f docker-compose.fork.yml logs --tail=100 sub2api
 ```
 
-后台应显示版本 `0.2.9-zy.1`。旧社区更新缓存会自动失效。
+后台应显示版本 `0.2.11-zy.1`。旧社区更新缓存会自动失效。
 
 ## 后续后台更新
 
-发布下一版本（如 `v0.2.9-zy.2`）后，在后台强制检测更新，确认链接指向
+从 `v0.2.9-zy.1` 升级到本次 `v0.2.11-zy.1`，或发布下一版本
+（如 `v0.2.11-zy.2`）后，在后台强制检测更新，确认链接指向
 `zhiylee/sub2api`，然后更新并点击重启。默认 Compose 的
 `restart: unless-stopped` 会在程序退出后重新启动容器。确认新版本显示正确，
 并验证一次实际 API 请求。回退列表同样按社区基线和修订号排序。
