@@ -1,0 +1,107 @@
+name: Hotfix image
+
+on:
+  push:
+    tags:
+      - 'hotfix-v*'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: hotfix-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CGO_ENABLED: '0'
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 3GiB
+      GOFLAGS: -p=1
+    steps:
+      - uses: actions/checkout@v6
+      - name: Resolve hotfix version
+        id: release
+        shell: bash
+        run: |
+          version=${GITHUB_REF_NAME#hotfix-v}
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$ ]]
+          printf '%s\n' "$version" > backend/cmd/server/VERSION
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}:$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Test downstream context compatibility and Fast billing
+        working-directory: backend
+        run: >-
+          go test -tags=unit -count=1
+          -run '^Test(Normalize(PageContext|Codex)|PrepareOpenAIWSHTTPBridgeBody|CodexPageContext|OpenAIAccountFast|EvaluateOpenAIFastPolicy|ApplyOpenAIFastPolicyTo|ResolveBillingServiceTier|ResolveOpenAIServiceTierBilling|ApplyServiceTierBillingResolution|OpenAICacheWrite|OpenAIGatewayServiceRecordUsage_)'
+          ./internal/pkg/codexcontext ./internal/service ./internal/handler
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Build embedded frontend
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+      - name: Build release binary and image context
+        env:
+          HOTFIX_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          mkdir -p .hotfix-context/deploy .hotfix-context/backend
+          build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          cd backend
+          go build -trimpath -tags=embed \
+            -ldflags "-s -w -X main.Version=$HOTFIX_VERSION -X main.Commit=$GITHUB_SHA -X main.Date=$build_date -X main.BuildType=release" \
+            -o ../.hotfix-context/sub2api ./cmd/server
+          cd ..
+          cp Dockerfile.goreleaser .hotfix-context/Dockerfile
+          cp deploy/docker-entrypoint.sh .hotfix-context/deploy/
+          cp -R backend/resources .hotfix-context/backend/
+      - uses: docker/setup-buildx-action@v3
+      - name: Build amd64 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .hotfix-context
+          load: true
+          platforms: linux/amd64
+          tags: ${{ steps.release.outputs.image }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.release.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      - name: Verify packaged binary
+        env:
+          HOTFIX_IMAGE: ${{ steps.release.outputs.image }}
+          HOTFIX_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          docker run --rm --network none --memory 256m --cpus 1 \
+            --entrypoint /app/sub2api "$HOTFIX_IMAGE" -version 2>&1 | grep -F "Sub2API $HOTFIX_VERSION "
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish fixed version only
+        env:
+          HOTFIX_IMAGE: ${{ steps.release.outputs.image }}
+        run: |
+          docker push "$HOTFIX_IMAGE"
+          docker image inspect --format '{{index .RepoDigests 0}}' "$HOTFIX_IMAGE" | tee hotfix-image.txt
+          cat hotfix-image.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hotfix-image
+          path: hotfix-image.txt
