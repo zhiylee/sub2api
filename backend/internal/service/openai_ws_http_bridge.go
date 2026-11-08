@@ -243,6 +243,8 @@ func skipOpenAIWSJSONValue(payload []byte, i int) int {
 }
 
 func prepareOpenAIWSHTTPBridgeBody(account *Account, payload []byte) ([]byte, error) {
+	// Every bridge turn, including replayed history, leaves through HTTP.
+	payload, _ = NormalizeCodexPageContext(payload)
 	var body map[string]any
 	if err := decodeOpenAIJSONUseNumber(payload, &body); err != nil {
 		return nil, err
