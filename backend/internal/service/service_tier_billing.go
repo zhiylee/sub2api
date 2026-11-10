@@ -60,13 +60,11 @@ func serviceTierCostRank(tier string) (rank int, known bool) {
 	}
 }
 
-// ResolveOpenAIServiceTierBilling applies the response-tier contract for the
-// selected credential. Public OpenAI API responses declare the actual tier and
-// may lower billing. The private ChatGPT Codex endpoint does not: it commonly
-// reports default for effective Fast turns, so OAuth-like credentials retain
-// the final outbound tier while still exposing the observed value.
+// ResolveOpenAIServiceTierBilling bills OpenAI accounts using the final outbound
+// request tier and preserves the observed response tier for diagnostics.
+// Other platforms retain the generic response-tier downgrade contract.
 func ResolveOpenAIServiceTierBilling(account *Account, requested, observed string) ServiceTierBillingResolution {
-	if account != nil && account.IsOpenAIOAuthLike() && codexOAuthResponseTierIsNonAuthoritative(observed) {
+	if account != nil && account.IsOpenAI() {
 		return ServiceTierBillingResolution{
 			Requested: normalizeBillingServiceTier(requested),
 			Observed:  normalizeBillingServiceTier(observed),
@@ -76,17 +74,8 @@ func ResolveOpenAIServiceTierBilling(account *Account, requested, observed strin
 	return ResolveBillingServiceTier(requested, observed)
 }
 
-func codexOAuthResponseTierIsNonAuthoritative(observed string) bool {
-	switch normalizeBillingServiceTier(observed) {
-	case "default":
-		return true
-	default:
-		return false
-	}
-}
-
-// ApplyOpenAIServiceTierBillingResolution lowers result.ServiceTier only when
-// the selected credential's upstream response tier is authoritative.
+// ApplyOpenAIServiceTierBillingResolution preserves the outbound tier for OpenAI
+// accounts and applies response-tier downgrades for other platforms.
 func ApplyOpenAIServiceTierBillingResolution(account *Account, result *OpenAIForwardResult) ServiceTierBillingResolution {
 	if result == nil {
 		return ServiceTierBillingResolution{}
