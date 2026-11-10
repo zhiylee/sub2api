@@ -3039,7 +3039,7 @@ func TestGatewayServiceCalculateRecordUsageCost_ChannelImageBillingNormalizesMis
 	require.InDelta(t, 0.44, cost.ActualCost, 1e-12)
 }
 
-func TestOpenAIGatewayServiceRecordUsage_ServiceTierDowngradedByUpstreamResponse(t *testing.T) {
+func TestOpenAIGatewayServiceRecordUsage_RequestedServiceTierOverridesDefaultResponse(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	userRepo := &openAIRecordUsageUserRepoStub{}
 	subRepo := &openAIRecordUsageSubRepoStub{}
@@ -3049,7 +3049,7 @@ func TestOpenAIGatewayServiceRecordUsage_ServiceTierDowngradedByUpstreamResponse
 
 	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
 		Result: &OpenAIForwardResult{
-			RequestID:                   "resp_service_tier_downgraded",
+			RequestID:                   "resp_requested_service_tier",
 			ServiceTier:                 &serviceTier,
 			UpstreamResponseServiceTier: "default",
 			Usage:                       usage,
@@ -3064,11 +3064,14 @@ func TestOpenAIGatewayServiceRecordUsage_ServiceTierDowngradedByUpstreamResponse
 	require.NoError(t, err)
 	require.NotNil(t, usageRepo.lastLog)
 	require.NotNil(t, usageRepo.lastLog.ServiceTier)
-	require.Equal(t, "default", *usageRepo.lastLog.ServiceTier, "usage log must record the tier actually billed")
+	require.Equal(t, "priority", *usageRepo.lastLog.ServiceTier, "usage log must retain the final outbound tier")
 
-	baseCost, calcErr := svc.billingService.CalculateCost("gpt-5.4", UsageTokens{InputTokens: 100, OutputTokens: 50}, 1.0)
+	fastCost, calcErr := svc.billingService.CalculateCostWithServiceTier("gpt-5.4", UsageTokens{InputTokens: 100, OutputTokens: 50}, svc.cfg.Default.RateMultiplier, "priority")
 	require.NoError(t, calcErr)
-	require.InDelta(t, baseCost.TotalCost, usageRepo.lastLog.TotalCost, 1e-10, "a request served at default must not pay the priority price")
+	require.InDelta(t, fastCost.TotalCost, usageRepo.lastLog.TotalCost, 1e-10)
+	require.InDelta(t, fastCost.ActualCost, usageRepo.lastLog.ActualCost, 1e-10)
+	require.Equal(t, 1, userRepo.deductCalls)
+	require.InDelta(t, fastCost.ActualCost, userRepo.lastAmount, 1e-10, "a priority request must pay the fast price even when the response reports default")
 }
 
 func TestOpenAIGatewayServiceRecordUsage_CodexDefaultEchoKeepsFastBilling(t *testing.T) {
