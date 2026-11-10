@@ -39,6 +39,9 @@ jobs:
       - name: Unit tests
         working-directory: backend
         run: make test-unit
+      - name: Build server
+        working-directory: backend
+        run: go build -o /tmp/sub2api ./cmd/server
       - name: Integration tests
         working-directory: backend
         run: make test-integration
@@ -62,6 +65,9 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Frontend typecheck and critical vitest
         run: make test-frontend
+      - name: Build frontend
+        working-directory: frontend
+        run: pnpm run build
 
   golangci-lint:
     runs-on: ubuntu-latest

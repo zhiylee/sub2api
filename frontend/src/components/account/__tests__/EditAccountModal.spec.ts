@@ -336,6 +336,64 @@ describe('EditAccountModal', () => {
 
   afterEach(() => vi.useRealTimers())
 
+  it.each(['apikey', 'oauth', 'setup-token', 'shadow'])('saves independent Fast settings for an OpenAI %s account without losing extra', async (type) => {
+    const account = type === 'shadow' ? buildOpenAISparkShadowAccount() : buildAccount()
+    if (type !== 'shadow') account.type = type
+    account.extra = { unrelated: 'keep', openai_passthrough: true }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    const force = wrapper.get('[data-testid="openai-account-force-fast-toggle"]')
+    const free = wrapper.get('[data-testid="openai-account-free-fast-toggle"]')
+    expect(force.attributes('aria-checked')).toBe('false')
+    expect(free.attributes('aria-checked')).toBe('false')
+
+    await free.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toMatchObject({
+      unrelated: 'keep',
+      openai_passthrough: true,
+      openai_force_fast: false,
+      openai_free_fast: true
+    })
+    expect(account.extra).not.toHaveProperty('openai_free_fast')
+    wrapper.unmount()
+  })
+
+  it('loads and disables saved Fast settings, then resets them when editing another account', async () => {
+    const account = buildAccount()
+    account.extra = { openai_force_fast: true, openai_free_fast: true, quota_limit: 50 }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    const force = wrapper.get('[data-testid="openai-account-force-fast-toggle"]')
+    const free = wrapper.get('[data-testid="openai-account-free-fast-toggle"]')
+    expect(force.attributes('aria-checked')).toBe('true')
+    expect(free.attributes('aria-checked')).toBe('true')
+    await force.trigger('click')
+    await free.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toMatchObject({
+      openai_force_fast: false, openai_free_fast: false, quota_limit: 50
+    })
+
+    await wrapper.setProps({ account: { ...account, id: 2, extra: { openai_force_fast: true } } })
+    expect(force.attributes('aria-checked')).toBe('true')
+    expect(free.attributes('aria-checked')).toBe('false')
+    await wrapper.setProps({ account: { ...account, id: 3, extra: {} } })
+    expect(force.attributes('aria-checked')).toBe('false')
+    expect(free.attributes('aria-checked')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('hides Fast settings on other platforms', () => {
+    const wrapper = mountModal(buildVertexAccount())
+    expect(wrapper.find('[data-testid="openai-account-force-fast-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="openai-account-free-fast-toggle"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('passes existing non-identity mappings to the whitelist selector and preserves them on save', async () => {
     const account = buildAccount()
     account.credentials.model_mapping = { 'gpt-5.2': 'gpt-5.2', 'gpt-latest': 'deepseek-chat' }
