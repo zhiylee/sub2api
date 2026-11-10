@@ -638,6 +638,14 @@ export default {
         official: '{platform} official API'
       },
       // OpenAI specific hints
+      openaiFast: {
+        title: 'OpenAI Fast Mode',
+        force: 'Force Fast (priority)',
+        forceHint: 'Request Fast for traffic through this account. Global Fast/Flex policies can still filter or block it. Applies to new requests after saving; reconnect existing WebSocket sessions.',
+        free: 'Free Fast',
+        freeHint: 'Charge customers Standard prices for this account’s Fast requests while requesting Fast upstream. This setting does not enable Fast by itself.',
+        inheritHint: 'Account and group settings combine: either can enable a feature. Turning an account setting off does not disable the group setting.'
+      },
       openai: {
         baseUrlHint: 'Leave default for official OpenAI API',
         apiKeyHint: 'Your OpenAI API Key',
