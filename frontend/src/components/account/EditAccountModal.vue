@@ -2014,6 +2014,12 @@
         </p>
       </div>
 
+      <OpenAIAccountFastSettings
+        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
+        v-model:force="openAIForceFast"
+        v-model:free="openAIFreeFast"
+      />
+
       <!-- OpenAI 自动透传开关（OAuth/API Key） -->
       <div
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
@@ -3416,6 +3422,7 @@ import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
 import OpenAIImageSizeTiersField from '@/components/account/OpenAIImageSizeTiersField.vue'
+import OpenAIAccountFastSettings from '@/components/account/OpenAIAccountFastSettings.vue'
 import {
   OPENAI_IMAGE_SIZE_TIERS,
   applyOpenAIImageSizeTiersToExtra,
@@ -4159,6 +4166,8 @@ const customBaseUrl = ref('')
 
 // OpenAI 自动透传开关（OAuth/API Key）
 const openaiPassthroughEnabled = ref(false)
+const openAIForceFast = ref(false)
+const openAIFreeFast = ref(false)
 // OpenAI Codex namespace 工具摊平兼容开关（仅 OAuth），缺省关闭即原样保留
 const openaiFlattenNamespacesEnabled = ref(false)
 const openAILongContextBillingEnabled = ref(false)
@@ -4642,6 +4651,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   mixedScheduling.value = false
   allowOverages.value = false
 	const extra = newAccount.extra as Record<string, unknown> | undefined
+	openAIForceFast.value = newAccount.platform === 'openai' && extra?.openai_force_fast === true
+	openAIFreeFast.value = newAccount.platform === 'openai' && extra?.openai_free_fast === true
 	mixedScheduling.value = extra?.mixed_scheduling === true
 	allowOverages.value = extra?.allow_overages === true
 	upstreamRequestIdHeader.value = readUpstreamRequestIdHeader(extra)
@@ -6406,6 +6417,15 @@ const handleSubmit = async () => {
         delete newExtra.upstream_request_id_header
       }
       updatePayload.extra = newExtra
+    }
+
+    // Apply last so quota/passthrough extra reconstruction cannot discard these settings.
+    if (props.account.platform === 'openai' && (props.account.type === 'oauth' || props.account.type === 'setup-token' || props.account.type === 'apikey')) {
+      updatePayload.extra = {
+        ...((updatePayload.extra as Record<string, unknown>) || props.account.extra || {}),
+        openai_force_fast: openAIForceFast.value,
+        openai_free_fast: openAIFreeFast.value
+      }
     }
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
