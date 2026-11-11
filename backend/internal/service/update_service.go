@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/distribution"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
@@ -30,7 +31,7 @@ var (
 const (
 	updateCacheKey = "update_check_cache"
 	updateCacheTTL = 1200 // 20 minutes
-	githubRepo     = "Wei-Shaw/sub2api"
+	githubRepo     = distribution.Repository
 
 	// Security: allowed download domains for updates
 	allowedDownloadHost = "github.com"
@@ -49,6 +50,8 @@ const (
 type UpdateCache interface {
 	GetUpdateInfo(ctx context.Context) (string, error)
 	SetUpdateInfo(ctx context.Context, data string, ttl time.Duration) error
+	GetUpstreamReleaseInfo(ctx context.Context) (string, error)
+	SetUpstreamReleaseInfo(ctx context.Context, data string, ttl time.Duration) error
 }
 
 // GitHubReleaseClient 获取 GitHub release 信息的接口
@@ -166,6 +169,9 @@ func (s *UpdateService) PerformUpdate(ctx context.Context) error {
 	info, err := s.CheckUpdate(ctx, true)
 	if err != nil {
 		return err
+	}
+	if info.Warning != "" {
+		return fmt.Errorf("update check failed: %s", info.Warning)
 	}
 
 	if !info.HasUpdate {
@@ -363,6 +369,9 @@ func (s *UpdateService) RollbackToVersion(ctx context.Context, version string) e
 // fetchRollbackCandidates fetches recent releases and keeps the newest
 // maxRollbackVersions entries strictly older than the current version.
 func (s *UpdateService) fetchRollbackCandidates(ctx context.Context) ([]*GitHubRelease, error) {
+	if _, _, ok := distribution.ParseVersion(s.currentVersion); !ok {
+		return nil, fmt.Errorf("cannot determine current release version")
+	}
 	releases, err := s.githubClient.FetchRecentReleases(ctx, githubRepo, rollbackFetchPageSize)
 	if err != nil {
 		return nil, err
@@ -375,7 +384,7 @@ func (s *UpdateService) fetchRollbackCandidates(ctx context.Context) ([]*GitHubR
 			continue
 		}
 		v := strings.TrimPrefix(r.TagName, "v")
-		if v == "" || seen[v] {
+		if !distribution.IsReleaseTag(r.TagName) || seen[v] {
 			continue
 		}
 		// Only versions strictly older than current (also excludes current itself)
@@ -404,6 +413,9 @@ func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, er
 	if err != nil {
 		return nil, err
 	}
+	if release == nil || release.Draft || release.Prerelease || !distribution.IsReleaseTag(release.TagName) {
+		return nil, fmt.Errorf("no stable downstream release found in %s", githubRepo)
+	}
 
 	latestVersion := strings.TrimPrefix(release.TagName, "v")
 
@@ -419,7 +431,7 @@ func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, er
 	return &UpdateInfo{
 		CurrentVersion: s.currentVersion,
 		LatestVersion:  latestVersion,
-		HasUpdate:      compareVersions(s.currentVersion, latestVersion) < 0,
+		HasUpdate:      hasDownstreamUpdate(s.currentVersion, latestVersion),
 		ReleaseInfo: &ReleaseInfo{
 			Name:        release.Name,
 			Body:        release.Body,
@@ -600,12 +612,16 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 	}
 
 	var cached struct {
+		Repository  string       `json:"repository"`
 		Latest      string       `json:"latest"`
 		ReleaseInfo *ReleaseInfo `json:"release_info"`
 		Timestamp   int64        `json:"timestamp"`
 	}
 	if err := json.Unmarshal([]byte(data), &cached); err != nil {
 		return nil, err
+	}
+	if cached.Repository != githubRepo || !distribution.IsReleaseTag("v"+cached.Latest) || cached.ReleaseInfo == nil {
+		return nil, fmt.Errorf("invalid downstream update cache")
 	}
 
 	if time.Now().Unix()-cached.Timestamp > updateCacheTTL {
@@ -615,7 +631,7 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 	return &UpdateInfo{
 		CurrentVersion: s.currentVersion,
 		LatestVersion:  cached.Latest,
-		HasUpdate:      compareVersions(s.currentVersion, cached.Latest) < 0,
+		HasUpdate:      hasDownstreamUpdate(s.currentVersion, cached.Latest),
 		ReleaseInfo:    cached.ReleaseInfo,
 		Cached:         true,
 		BuildType:      s.buildType,
@@ -624,10 +640,12 @@ func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
 
 func (s *UpdateService) saveToCache(ctx context.Context, info *UpdateInfo) {
 	cacheData := struct {
+		Repository  string       `json:"repository"`
 		Latest      string       `json:"latest"`
 		ReleaseInfo *ReleaseInfo `json:"release_info"`
 		Timestamp   int64        `json:"timestamp"`
 	}{
+		Repository:  githubRepo,
 		Latest:      info.LatestVersion,
 		ReleaseInfo: info.ReleaseInfo,
 		Timestamp:   time.Now().Unix(),
@@ -639,6 +657,9 @@ func (s *UpdateService) saveToCache(ctx context.Context, info *UpdateInfo) {
 
 // compareVersions compares two semantic versions
 func compareVersions(current, latest string) int {
+	if order, ok := distribution.CompareVersions(current, latest); ok {
+		return order
+	}
 	currentParts := parseVersion(current)
 	latestParts := parseVersion(latest)
 
