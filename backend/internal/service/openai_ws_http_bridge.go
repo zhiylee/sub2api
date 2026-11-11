@@ -15,6 +15,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/codexcontext"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -243,6 +244,8 @@ func skipOpenAIWSJSONValue(payload []byte, i int) int {
 }
 
 func prepareOpenAIWSHTTPBridgeBody(account *Account, payload []byte) ([]byte, error) {
+	// Normalize after replay assembly on every turn, before HTTP forwarding.
+	payload, _ = codexcontext.NormalizePageContext(payload)
 	var body map[string]any
 	if err := decodeOpenAIJSONUseNumber(payload, &body); err != nil {
 		return nil, err
