@@ -54,5 +54,10 @@ test-frontend:
 	@pnpm --dir frontend run typecheck
 	@$(MAKE) test-frontend-critical
 
+FRONTEND_DOWNSTREAM_VITEST := \
+	src/components/common/__tests__/VersionBadge.spec.ts \
+	src/composables/__tests__/useUpstreamRelease.spec.ts \
+	src/stores/__tests__/app.version.spec.ts
+
 test-frontend-critical:
-	@pnpm --dir frontend exec vitest run $(FRONTEND_CRITICAL_VITEST)
+	@pnpm --dir frontend exec vitest run $(FRONTEND_CRITICAL_VITEST) $(FRONTEND_DOWNSTREAM_VITEST)

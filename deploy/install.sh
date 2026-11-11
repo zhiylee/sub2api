@@ -2,7 +2,7 @@
 #
 # Sub2API Installation Script
 # Sub2API 安装脚本
-# Usage: curl -sSL https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/deploy/install.sh | bash
+# Usage: download deploy/install.sh from a zhiylee/sub2api release tag, then run it with bash.
 #
 
 set -e
@@ -31,7 +31,8 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
-GITHUB_REPO="Wei-Shaw/sub2api"
+GITHUB_REPO="zhiylee/sub2api"
+DOWNSTREAM_VERSION_PATTERN='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-zy\.[1-9][0-9]*$'
 INSTALL_DIR="/opt/sub2api"
 SERVICE_NAME="sub2api"
 SERVICE_USER="sub2api"
@@ -539,6 +540,11 @@ get_latest_version() {
         exit 1
     fi
 
+    if [[ ! "$LATEST_VERSION" =~ $DOWNSTREAM_VERSION_PATTERN ]]; then
+        print_error "Latest release is not a downstream version: $LATEST_VERSION"
+        exit 1
+    fi
+
     print_info "$(msg 'latest_version'): $LATEST_VERSION"
 }
 
@@ -547,7 +553,7 @@ list_versions() {
     print_info "$(msg 'fetching_versions')"
 
     local versions
-    versions=$(github_api_curl -s --connect-timeout 10 --max-time 30 "https://api.github.com/repos/${GITHUB_REPO}/releases" 2>/dev/null | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | head -20)
+    versions=$(github_api_curl -s --connect-timeout 10 --max-time 30 "https://api.github.com/repos/${GITHUB_REPO}/releases" 2>/dev/null | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | grep -E "$DOWNSTREAM_VERSION_PATTERN" | head -20)
 
     if [ -z "$versions" ]; then
         print_error "$(msg 'failed_get_version')"
@@ -580,6 +586,11 @@ validate_version() {
         version="v$version"
     fi
 
+    if [[ ! "$version" =~ $DOWNSTREAM_VERSION_PATTERN ]]; then
+        print_error "Expected a downstream release version: vX.Y.Z-zy.N" >&2
+        exit 1
+    fi
+
     print_info "$(msg 'validating_version') $version" >&2
 
     # Check if the release exists
@@ -607,7 +618,7 @@ validate_version() {
 get_current_version() {
     if [ -f "$INSTALL_DIR/sub2api" ]; then
         # Use grep -E for better compatibility (works on macOS and Linux)
-        "$INSTALL_DIR/sub2api" --version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown"
+        "$INSTALL_DIR/sub2api" --version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+(-zy\.[1-9][0-9]*)?' | head -1 || echo "unknown"
     else
         echo "not_installed"
     fi
@@ -863,7 +874,7 @@ upgrade() {
     print_info "$(msg 'upgrading')"
 
     # Get current version
-    CURRENT_VERSION=$("$INSTALL_DIR/sub2api" --version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+    CURRENT_VERSION=$(get_current_version)
     print_info "$(msg 'current_version'): $CURRENT_VERSION"
 
     # Stop service

@@ -4,11 +4,12 @@ import (
 	"context"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/distribution"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/redis/go-redis/v9"
 )
 
-const updateCacheKey = "update:latest"
+const updateCacheKey = "update:" + distribution.Repository + ":latest"
 
 type updateCache struct {
 	rdb *redis.Client

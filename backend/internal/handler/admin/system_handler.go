@@ -45,6 +45,7 @@ func systemUpdateContext(ctx context.Context) (context.Context, context.CancelFu
 
 type systemUpdateService interface {
 	CheckUpdate(ctx context.Context, force bool) (*service.UpdateInfo, error)
+	CheckUpstreamRelease(ctx context.Context, force bool) *service.UpstreamReleaseInfo
 	PerformUpdate(ctx context.Context) error
 	Rollback() error
 	ListRollbackVersions(ctx context.Context) ([]service.RollbackVersion, error)
