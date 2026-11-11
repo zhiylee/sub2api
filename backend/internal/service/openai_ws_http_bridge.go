@@ -243,6 +243,8 @@ func skipOpenAIWSJSONValue(payload []byte, i int) int {
 }
 
 func prepareOpenAIWSHTTPBridgeBody(account *Account, payload []byte) ([]byte, error) {
+	// Normalize after replay assembly on every turn, before HTTP forwarding.
+	payload, _ = NormalizeCodexUntrustedContext(payload)
 	var body map[string]any
 	if err := decodeOpenAIJSONUseNumber(payload, &body); err != nil {
 		return nil, err
