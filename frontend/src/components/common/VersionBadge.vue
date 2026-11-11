@@ -10,7 +10,7 @@
             ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50'
             : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-800 dark:text-dark-400 dark:hover:bg-dark-700'
         ]"
-        :title="hasUpdate ? t('version.updateAvailable') : t('version.upToDate')"
+        :title="versionWarning ? t('downstreamUpdates.checkFailed') : hasUpdate ? t('version.updateAvailable') : t('downstreamUpdates.upToDate')"
       >
         <span v-if="currentVersion" class="font-medium">v{{ currentVersion }}</span>
         <span
@@ -24,6 +24,9 @@
           ></span>
           <span class="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
         </span>
+        <span v-if="hasUpstreamRelease" class="whitespace-nowrap text-blue-600 dark:text-blue-400">
+          {{ t('downstreamUpdates.upstream.newRelease') }}
+        </span>
       </button>
 
       <!-- Dropdown -->
@@ -31,7 +34,7 @@
         <div
           v-if="dropdownOpen"
           ref="dropdownRef"
-          class="absolute left-0 z-50 mt-2 overflow-hidden whitespace-normal rounded-xl border border-gray-200 bg-white shadow-lg transition-all duration-200 dark:border-dark-700 dark:bg-dark-800"
+          class="absolute left-0 z-50 mt-2 max-h-[calc(100dvh-7rem)] overflow-y-auto whitespace-normal rounded-xl border border-gray-200 bg-white shadow-lg transition-all duration-200 dark:border-dark-700 dark:bg-dark-800"
           :class="rollbackPanelOpen && isReleaseBuild ? 'w-80' : 'w-64'"
         >
           <!-- Header with refresh button -->
@@ -39,19 +42,19 @@
             class="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-dark-700"
           >
             <span class="text-sm font-medium text-gray-700 dark:text-dark-300">{{
-              t('version.currentVersion')
+              t('downstreamUpdates.currentVersion')
             }}</span>
             <button
               @click="refreshVersion(true)"
               class="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700 dark:hover:text-dark-200"
-              :disabled="loading"
+              :disabled="refreshing"
               :title="t('version.refresh')"
             >
               <Icon
                 name="refresh"
                 size="sm"
                 :stroke-width="2"
-                :class="{ 'animate-spin': loading }"
+                :class="{ 'animate-spin': refreshing }"
               />
             </button>
           </div>
@@ -80,17 +83,17 @@
             <template v-else>
               <!-- Version display - centered and prominent -->
               <div class="mb-4 text-center">
-                <div class="inline-flex items-center gap-2">
+                <div class="inline-flex max-w-full items-center gap-2">
                   <span
                     v-if="currentVersion"
-                    class="text-2xl font-bold text-gray-900 dark:text-white"
+                    class="min-w-0 break-all text-2xl font-bold text-gray-900 dark:text-white"
                     >v{{ currentVersion }}</span
                   >
                   <span v-else class="text-2xl font-bold text-gray-400 dark:text-dark-500">--</span>
                   <!-- Show check mark when up to date -->
                   <span
-                    v-if="!hasUpdate"
-                    class="flex h-5 w-5 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30"
+                    v-if="!hasUpdate && !versionWarning"
+                    class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30"
                   >
                     <svg
                       class="h-3 w-3 text-green-600 dark:text-green-400"
@@ -107,12 +110,18 @@
                 </div>
                 <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
                   {{
-                    hasUpdate
-                      ? t('version.latestVersion') + ': v' + latestVersion
-                      : t('version.upToDate')
+                    versionWarning
+                      ? t('downstreamUpdates.checkFailed')
+                      : hasUpdate
+                        ? t('downstreamUpdates.latestVersion') + ': v' + latestVersion
+                        : t('downstreamUpdates.upToDate')
                   }}
                 </p>
               </div>
+
+              <p v-if="versionWarning" class="mb-3 text-xs text-amber-600 dark:text-amber-400">
+                {{ t('downstreamUpdates.checkWarning') }}
+              </p>
 
               <!-- Priority 1: Update error (must check before hasUpdate) -->
               <div v-if="updateError" class="space-y-2">
@@ -142,7 +151,7 @@
                 <!-- Retry button -->
                 <button
                   @click="handleUpdate"
-                  :disabled="updating"
+                  :disabled="updating || !!versionWarning"
                   class="flex w-full items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {{ t('version.retry') }}
@@ -320,7 +329,7 @@
                 <!-- Update button -->
                 <button
                   @click="handleUpdate"
-                  :disabled="updating"
+                  :disabled="updating || !!versionWarning"
                   class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <svg v-if="updating" class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -625,6 +634,10 @@
                 </div>
               </div>
             </template>
+            <UpstreamReleaseNotice :info="upstreamInfo" :loading="upstreamLoading" :error="upstreamError" />
+            <p class="mt-3 text-xs text-gray-400 dark:text-dark-500">
+              {{ t('downstreamUpdates.dockerHint') }}
+            </p>
           </div>
         </div>
       </transition>
@@ -650,10 +663,12 @@ import {
 } from '@/api/admin/system'
 import { useClipboard } from '@/composables/useClipboard'
 import Icon from '@/components/icons/Icon.vue'
-
-const GITHUB_REPO = 'Wei-Shaw/sub2api'
-// Docker Hub image published by CI (tags carry no "v" prefix, e.g. weishaw/sub2api:0.1.146)
-const DOCKER_IMAGE = 'weishaw/sub2api'
+import UpstreamReleaseNotice from './UpstreamReleaseNotice.vue'
+import { useUpstreamRelease } from '@/composables/useUpstreamRelease'
+import {
+  DOWNSTREAM_REPOSITORY as GITHUB_REPO,
+  DOWNSTREAM_DOCKER_IMAGE as DOCKER_IMAGE
+} from '@/config/distribution'
 
 const { t } = useI18n()
 
@@ -663,6 +678,13 @@ const props = defineProps<{
 
 const authStore = useAuthStore()
 const appStore = useAppStore()
+const {
+  info: upstreamInfo,
+  loading: upstreamLoading,
+  error: upstreamError,
+  hasNewRelease: hasUpstreamRelease,
+  refresh: refreshUpstream
+} = useUpstreamRelease()
 
 const isAdmin = computed(() => authStore.isAdmin)
 
@@ -676,6 +698,8 @@ const latestVersion = computed(() => appStore.latestVersion)
 const hasUpdate = computed(() => appStore.hasUpdate)
 const releaseInfo = computed(() => appStore.releaseInfo)
 const buildType = computed(() => appStore.buildType)
+const versionWarning = computed(() => appStore.versionWarning)
+const refreshing = computed(() => loading.value || upstreamLoading.value)
 
 // Update process states (local to this component)
 const updating = ref(false)
@@ -710,7 +734,9 @@ const manualTabs = computed(() => [
 const scriptRollbackCommand = computed(() => {
   if (!selectedRollbackVersion.value) return ''
   const tag = `v${selectedRollbackVersion.value}`
-  return `curl -sSL https://raw.githubusercontent.com/${GITHUB_REPO}/${tag}/deploy/install.sh | sudo bash -s -- rollback ${tag}`
+  // Older fork tags shipped an installer pointing at upstream; use this build's installer.
+  const installerTag = `v${currentVersion.value}`
+  return `curl -sSL https://raw.githubusercontent.com/${GITHUB_REPO}/${installerTag}/deploy/install.sh | sudo bash -s -- rollback ${tag}`
 })
 
 const dockerRollbackCommand = computed(() => {
@@ -748,7 +774,7 @@ async function refreshVersion(force = true) {
   needRestart.value = false
   resetRollbackState()
 
-  await appStore.fetchVersion(force)
+  await Promise.all([appStore.fetchVersion(force), refreshUpstream(force)])
 }
 
 async function handleUpdate() {
@@ -913,6 +939,7 @@ onMounted(() => {
   if (isAdmin.value) {
     // Use cached version if available, otherwise fetch
     appStore.fetchVersion(false)
+    refreshUpstream(false)
   }
   document.addEventListener('click', handleClickOutside)
 })

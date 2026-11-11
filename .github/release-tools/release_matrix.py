@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 
 import yaml
 
+import downstream_release
+
 FULL_CONFIG = Path('.goreleaser.yaml')
 SIMPLE_CONFIG = Path('.goreleaser.simple.yaml')
 VERSION_FILE = Path('backend/cmd/server/VERSION')
@@ -65,6 +67,7 @@ def plan(args):
             raise ValueError('checkout does not match the selected release tag')
     if not VERSION_RE.fullmatch(version):
         raise ValueError('invalid VERSION')
+    downstream_release.validate_mode(version, args.simple)
     VERSION_FILE.write_text(version + '\n')
     result = {'sha': sha, 'tag': tag, 'version': version,
               'owner_lower': os.environ.get('GITHUB_REPOSITORY_OWNER', '').lower(),
@@ -101,6 +104,7 @@ def generate_config(args):
         else:
             data['release']['extra_files'] = extra
             data['checksum'] = {'name_template': 'checksums.txt', 'algorithm': 'sha256', 'extra_files': extra}
+        downstream_release.configure_publication(data, os.environ.get('RELEASE_VERSION', ''), args.simple)
     Path(args.output).write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
 
 
