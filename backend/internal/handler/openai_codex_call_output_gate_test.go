@@ -11,7 +11,7 @@ import (
 )
 
 func TestCodexCallOutputGateSkipsDeclaredToolsWithoutCandidate(t *testing.T) {
-	body := []byte(`{"model":"gpt-5","tools":[{"type":"function","name":"automation_update"},{"type":"function","name":"create_thread"}],` +
+	body := []byte(`{"model":"gpt-5","tools":[{"type":"function","name":"automation_update"},{"type":"function","name":"create_thread"},{"type":"function","name":"browser_tabs"}],` +
 		`"input":[{"type":"function_call","call_id":"c1","name":"shell"},{"type":"function_call_output","call_id":"c1","output":"ok"}]}`)
 	require.False(t, mayContainCodexCallOutputCandidate(body, "automation_update"))
 	require.False(t, mayContainCodexCallOutputCandidate(body, "create_thread", "send_message_to_thread"))
