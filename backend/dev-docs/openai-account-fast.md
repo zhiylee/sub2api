@@ -14,7 +14,7 @@
 }
 ```
 
-未配置时均为关闭。账号与分组设置采用 OR 关系：任一处开启即生效，关闭账号开关不会取消分组配置。全局策略仍可过滤或拦截强制写入的 `priority`。
+未配置时均为关闭。账号和分组的 Fast 任一处开启即生效。分组的强制 Ultra Fast 在模型及账号符合上游资格时优先，其余请求按 Fast 设置或客户端档位处理。全局策略继续作用于最终选出的档位。
 
 配置仅对 OpenAI 账号生效，覆盖 OAuth、Setup Token 和 API Key 文本转发，包括 Responses、Chat Completions、Messages 转换与 WebSocket 的 `response.create`。图片、视频等独立端点不额外注入此参数。已有 WebSocket 会话需要重连。
 
@@ -27,7 +27,7 @@
 账号配置读取、校验及组合判断集中在 `backend/internal/service/openai_account_fast.go`，界面集中在 `frontend/src/components/account/OpenAIAccountFastSettings.vue`。其余接入点为：
 
 1. `admin_account.go`：创建、编辑和 extra 更新入口的布尔值校验。
-2. `openai_gateway_request_body.go`、`openai_gateway_forward.go`：使用账号与分组组合后的强制 Fast 判断。
+2. `openai_gateway_request_body.go`、`openai_gateway_forward.go` 使用组合后的强制档位判断，复用官方 Ultra Fast 资格检查。
 3. `openai_gateway_messages_chat_fallback.go`：转换为 Chat Completions 后应用策略，并从最终出站报文提取档位。
 4. `openai_gateway_usage.go`：用实际选中的账号判断免费 Fast，继续复用原有 Standard 重算。
 5. `EditAccountModal.vue`：回填开关，并在提交末尾合并配置，避免其它 extra 构建逻辑覆盖。
