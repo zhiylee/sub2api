@@ -13,7 +13,7 @@
 ## 当前基线
 
 - 官方正式版为 `v0.2.23`，提交为 `5af9afb588c4b014b3df9db7d4073af1f8ae01b6`。 [官方 Release](https://github.com/Wei-Shaw/sub2api/releases/tag/v0.2.23)
-- 集成分支为 `release/0.2.23`，版本为 `0.2.23-zy.1`，对应发布 tag 为 `v0.2.23-zy.1`。
+- 集成分支为 `release/0.2.23`，版本为 `0.2.23-zy.2`，对应发布 tag 为 `v0.2.23-zy.2`。
 - 二开来源为已发布的 `v0.2.21-zy.1`（`1786061f7`）。官方 `v0.2.23` 已包含 `v0.2.22`。
 
 ## 提交组织
@@ -36,7 +36,7 @@ git log --format='%h %s' --grep='^Downstream-Patch: FAST-001$' v0.2.23..release/
 | 编号 | 功能 | 处理 | 迁移单元与来源 |
 | --- | --- | --- | --- |
 | BILL-001 | OpenAI 按最终出站 `service_tier` 计费 | 保留。官方 API Key 路径仍允许响应档位降低计费 | `7d60fe775` |
-| BILL-002 | 分组逐模型 Token 倍率 | 官方支持逐模型定价和倍率优先级、且兼容存量配置后可退役 | 独立功能提交 |
+| BILL-002 | 分组逐模型 Token 倍率 | 官方支持逐模型定价和倍率优先级、且兼容存量配置后可退役 | `77b0f99d8` |
 | FAST-001 | 账号级强制 Fast / 免费 Fast | 保留。符合资格的分组 Ultra Fast 先于账号和分组的 Fast，最终档位继续经过全局策略 | `cfbd5910c` |
 | CTX-001 | Codex Desktop Page、浏览器上下文和 HTTP 桥接 | 复用官方 HTTP 格式与零拷贝预筛选，补齐 `browser_tabs` 和 WS 转 HTTP | `80e98e0fd` |
 | CI-001 | 固定版本 hotfix 镜像及产物版本验证 | 保留上下文、Fast 与缓存计费回归 | `e9f816b1e` |
