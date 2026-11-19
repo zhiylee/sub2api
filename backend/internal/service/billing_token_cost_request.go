@@ -12,6 +12,7 @@ type TokenCostRequest struct {
 	Group           *Group
 	Tokens          UsageTokens
 	RateMultiplier  float64
+	modelTokenRate  *float64
 	PricingAt       time.Time
 	ServiceTier     string
 	ReasoningEffort string
@@ -37,7 +38,11 @@ func (s *BillingService) CalculateTokenCostForRequest(req TokenCostRequest) (*Co
 	if req.ReasoningEffort != "" {
 		return s.CalculateCostUnified(s.tokenCostInput(req, resolved))
 	}
-	return s.CalculateCost(req.Model, req.Tokens, req.RateMultiplier)
+	cost, err := s.CalculateCost(req.Model, req.Tokens, tokenRateOr(req.modelTokenRate, req.RateMultiplier))
+	if cost != nil {
+		cost.modelTokenRate = req.modelTokenRate
+	}
+	return cost, err
 }
 
 func (s *BillingService) tokenCostInput(req TokenCostRequest, resolved *ResolvedPricing) CostInput {
@@ -48,6 +53,7 @@ func (s *BillingService) tokenCostInput(req TokenCostRequest, resolved *Resolved
 		Tokens:          req.Tokens,
 		RequestCount:    1,
 		RateMultiplier:  req.RateMultiplier,
+		modelTokenRate:  req.modelTokenRate,
 		PricingAt:       req.PricingAt,
 		ServiceTier:     req.ServiceTier,
 		ReasoningEffort: req.ReasoningEffort,

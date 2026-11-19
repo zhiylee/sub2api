@@ -82,6 +82,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 	reqLog = reqLog.With(zap.String("model", requestedModel))
 	setOpsRequestContext(c, requestedModel, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
+	c.Request = c.Request.WithContext(service.WithoutGroupModelRate(c.Request.Context()))
 	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, "openai_alpha_search", requestedModel, body); decision != nil && !decision.AllowNextStage {
 		h.openAISecurityAuditError(c, decision)
 		return

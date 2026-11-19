@@ -576,12 +576,18 @@ export interface GroupLocaleText {
 export type GroupI18n = Record<string, GroupLocaleText>
 
 // 用户侧接口返回的 name / description 已由后端按请求语言（Accept-Language）选好
+export interface GroupModelRate {
+  model: string
+  multiplier: number
+}
+
 export interface Group {
   id: number
   name: string
   description: string | null
   platform: GroupPlatform
   rate_multiplier: number
+  model_rates?: GroupModelRate[]
   rpm_limit?: number // Group-level RPM cap (0 = unlimited); overrides user-level rpm_limit when set
   max_reasoning_effort?: string // Anthropic/OpenAI reasoning ceiling; empty means unlimited
   max_reasoning_effort_over_limit?: string // downgrade (default) or deny when over the ceiling

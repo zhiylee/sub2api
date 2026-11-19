@@ -1187,6 +1187,7 @@ func normalizeGroupModelPricing(platform string, pricing []ChannelModelPricing) 
 				"group model pricing does not support time pricing",
 			)
 		}
+		out[i].TimePricing = nil
 		if strings.TrimSpace(out[i].Platform) == "" {
 			out[i].Platform = platform
 		}
@@ -1197,7 +1198,10 @@ func normalizeGroupModelPricing(platform string, pricing []ChannelModelPricing) 
 			return nil, infraerrors.New(http.StatusBadRequest, "GROUP_MODEL_PRICING_MODELS_REQUIRED", "group model pricing entry requires at least one model")
 		}
 	}
-	if err := validatePricingEntries(out); err != nil {
+	if err := validateGroupModelRates(out); err != nil {
+		return nil, err
+	}
+	if err := validatePricingEntries(groupUnitPricingEntries(out)); err != nil {
 		return nil, err
 	}
 	return out, nil

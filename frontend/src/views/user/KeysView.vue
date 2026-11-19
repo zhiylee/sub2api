@@ -584,7 +584,14 @@
                 :peak-rate-multiplier="(option as unknown as GroupOption).peakRateMultiplier"
                 :description="(option as unknown as GroupOption).description"
                 :selected="selected"
-              />
+              >
+                <template #after-description>
+                  <GroupModelRateBadges
+                    :rates="(option as unknown as GroupOption).modelRates"
+                    :group-rate="(option as unknown as GroupOption).rate"
+                  />
+                </template>
+              </GroupOptionItem>
             </template>
           </Select>
         </div>
@@ -1195,7 +1202,11 @@
                 selectedKeyForGroup?.group_id === option.value ||
                 (!selectedKeyForGroup?.group_id && option.value === null)
               "
-            />
+            >
+              <template #after-description>
+                <GroupModelRateBadges :rates="option.modelRates" :group-rate="option.rate" />
+              </template>
+            </GroupOptionItem>
           </button>
           <!-- Empty state when search has no results -->
           <div v-if="filteredGroupOptions.length === 0" class="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
@@ -1220,6 +1231,7 @@ import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import BulkEditKeysModal from '@/components/keys/BulkEditKeysModal.vue'
+import GroupModelRateBadges from '@/components/keys/GroupModelRateBadges.vue'
 	import DataTable from '@/components/common/DataTable.vue'
 	import Pagination from '@/components/common/Pagination.vue'
 	import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -1259,6 +1271,7 @@ interface GroupOption {
   description: string | null
   rate: number
   userRate: number | null
+  modelRates: NonNullable<Group['model_rates']>
   peakRateEnabled: boolean
   peakStart: string
   peakEnd: string
@@ -1389,6 +1402,7 @@ let resetTimer: ReturnType<typeof setInterval> | null = null
 const usageStats = ref<Record<string, BatchApiKeyUsageStats>>({})
 const usageLoading = ref(false)
 const userGroupRates = ref<Record<number, number>>({})
+const userGroupRatesLoaded = ref(false)
 
 const pagination = ref({
   page: 1,
@@ -1528,6 +1542,9 @@ const groupOptions = computed(() =>
     description: group.description,
     rate: group.rate_multiplier,
     userRate: userGroupRates.value[group.id] ?? null,
+    modelRates: userGroupRatesLoaded.value && userGroupRates.value[group.id] == null
+      ? group.model_rates ?? []
+      : [],
     peakRateEnabled: group.peak_rate_enabled,
     peakStart: group.peak_start,
     peakEnd: group.peak_end,
@@ -1667,7 +1684,8 @@ const loadGroups = async () => {
 
 const loadUserGroupRates = async () => {
   try {
-    userGroupRates.value = await userGroupsAPI.getUserGroupRates()
+    userGroupRates.value = await userGroupsAPI.getUserGroupRates() ?? {}
+    userGroupRatesLoaded.value = true
   } catch (error) {
     console.error('Failed to load user group rates:', error)
   }

@@ -1499,13 +1499,20 @@
             <button type="button" class="btn btn-secondary shrink-0 whitespace-nowrap" @click="addGroupPricing(createForm.model_pricing)">
               <Icon name="plus" size="sm" class="mr-1" />{{ t("admin.groups.modelPricing.add") }}
             </button>
+            <button type="button" class="btn btn-secondary shrink-0 whitespace-nowrap" @click="addGroupPricing(createForm.model_pricing, true)">
+              <Icon name="plus" size="sm" class="mr-1" />{{ t("admin.groups.modelPricing.addRate") }}
+            </button>
           </div>
           <label class="mt-3 flex items-start gap-2">
             <input v-model="createForm.long_context_pricing_enabled" type="checkbox" class="mt-0.5" />
             <span><span class="block text-sm text-gray-700 dark:text-gray-300">{{ t("admin.groups.modelPricing.longContext") }}</span><span class="block text-xs text-gray-500">{{ t("admin.groups.modelPricing.longContextHint") }}</span></span>
           </label>
           <div class="mt-3 space-y-2">
-            <PricingEntryCard v-for="(entry, index) in createForm.model_pricing" :key="index" :entry="entry" :platform="createForm.platform" hide-token-intervals @update="createForm.model_pricing[index] = $event" @remove="createForm.model_pricing.splice(index, 1)" />
+            <PricingEntryCard v-for="(entry, index) in createForm.model_pricing" :key="index" :entry="entry" :platform="createForm.platform" hide-token-intervals :skip-price-autofill="entry.group_rate_multiplier !== undefined" @update="createForm.model_pricing[index] = $event" @remove="createForm.model_pricing.splice(index, 1)">
+              <template #token-rate>
+                <GroupModelRateInput v-model="entry.group_rate_multiplier" />
+              </template>
+            </PricingEntryCard>
           </div>
         </div>
 
@@ -3176,13 +3183,20 @@
             <button type="button" class="btn btn-secondary shrink-0 whitespace-nowrap" @click="addGroupPricing(editForm.model_pricing)">
               <Icon name="plus" size="sm" class="mr-1" />{{ t("admin.groups.modelPricing.add") }}
             </button>
+            <button type="button" class="btn btn-secondary shrink-0 whitespace-nowrap" @click="addGroupPricing(editForm.model_pricing, true)">
+              <Icon name="plus" size="sm" class="mr-1" />{{ t("admin.groups.modelPricing.addRate") }}
+            </button>
           </div>
           <label class="mt-3 flex items-start gap-2">
             <input v-model="editForm.long_context_pricing_enabled" type="checkbox" class="mt-0.5" />
             <span><span class="block text-sm text-gray-700 dark:text-gray-300">{{ t("admin.groups.modelPricing.longContext") }}</span><span class="block text-xs text-gray-500">{{ t("admin.groups.modelPricing.longContextHint") }}</span></span>
           </label>
           <div class="mt-3 space-y-2">
-            <PricingEntryCard v-for="(entry, index) in editForm.model_pricing" :key="index" :entry="entry" :platform="editForm.platform" hide-token-intervals @update="editForm.model_pricing[index] = $event" @remove="editForm.model_pricing.splice(index, 1)" />
+            <PricingEntryCard v-for="(entry, index) in editForm.model_pricing" :key="index" :entry="entry" :platform="editForm.platform" hide-token-intervals :skip-price-autofill="entry.group_rate_multiplier !== undefined" @update="editForm.model_pricing[index] = $event" @remove="editForm.model_pricing.splice(index, 1)">
+              <template #token-rate>
+                <GroupModelRateInput v-model="entry.group_rate_multiplier" />
+              </template>
+            </PricingEntryCard>
           </div>
         </div>
 
@@ -4361,12 +4375,14 @@ import GroupCapacityBadge from "@/components/common/GroupCapacityBadge.vue";
 import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffortPolicyFields.vue";
 import CodexManifestAccountsField from "@/components/admin/group/CodexManifestAccountsField.vue";
 import PricingEntryCard from "@/components/admin/channel/PricingEntryCard.vue";
+import GroupModelRateInput from "@/components/admin/group/GroupModelRateInput.vue";
 import type { PricingFormEntry } from "@/components/admin/channel/types";
 import {
   apiIntervalsToForm,
   createDefaultTimePricingForm,
   formIntervalsToAPI,
   formReasoningEffortMultipliersToAPI,
+  isValidPositiveMultiplier,
   mTokToPerToken,
   perTokenToMTok,
   toNullableNumber,
@@ -4455,8 +4471,11 @@ const emptyGroupPricing = (): PricingFormEntry => ({
   time_pricing: createDefaultTimePricingForm(),
 });
 
-const addGroupPricing = (entries: PricingFormEntry[]) =>
-  entries.push(emptyGroupPricing());
+const addGroupPricing = (entries: PricingFormEntry[], addRate = false) => {
+  const entry = emptyGroupPricing();
+  if (addRate) entry.group_rate_multiplier = null;
+  entries.push(entry);
+};
 
 const groupPricingFromAPI = (
   pricing: ChannelModelPricing[] | undefined,
@@ -4464,12 +4483,16 @@ const groupPricingFromAPI = (
   (pricing || []).map((entry) => ({
     models: entry.models || [],
     billing_mode: entry.billing_mode || "token",
+    group_rate_multiplier: entry.group_rate_multiplier,
     input_price: perTokenToMTok(entry.input_price),
     output_price: perTokenToMTok(entry.output_price),
     cache_write_price: perTokenToMTok(entry.cache_write_price),
     cache_write_1h_price: perTokenToMTok(entry.cache_write_1h_price),
     cache_write_12h_price: perTokenToMTok(entry.cache_write_12h_price),
     cache_read_price: perTokenToMTok(entry.cache_read_price),
+    fast_multiplier: entry.fast_multiplier,
+    flex_multiplier: entry.flex_multiplier,
+    ultrafast_multiplier: entry.ultrafast_multiplier,
     reasoning_effort_multipliers: entry.reasoning_effort_multipliers
       ? { ...entry.reasoning_effort_multipliers }
       : null,
@@ -4485,17 +4508,23 @@ const groupPricingToAPI = (
   platform: string,
 ): ChannelModelPricing[] =>
   pricing
-    .filter((entry) => entry.models.length > 0)
+    .filter((entry) => entry.models.length > 0 && keepGroupPricingEntry(entry))
     .map((entry) => ({
       platform,
       models: entry.models,
       billing_mode: entry.billing_mode,
+      group_rate_multiplier: entry.billing_mode === "token"
+        ? toNullableNumber(entry.group_rate_multiplier)
+        : undefined,
       input_price: mTokToPerToken(entry.input_price),
       output_price: mTokToPerToken(entry.output_price),
       cache_write_price: mTokToPerToken(entry.cache_write_price),
       cache_write_1h_price: mTokToPerToken(entry.cache_write_1h_price),
       cache_write_12h_price: mTokToPerToken(entry.cache_write_12h_price),
       cache_read_price: mTokToPerToken(entry.cache_read_price),
+      fast_multiplier: toNullableNumber(entry.fast_multiplier),
+      flex_multiplier: toNullableNumber(entry.flex_multiplier),
+      ultrafast_multiplier: toNullableNumber(entry.ultrafast_multiplier),
       reasoning_effort_multipliers: formReasoningEffortMultipliersToAPI(
         entry.reasoning_effort_multipliers,
       ),
@@ -4508,6 +4537,16 @@ const groupPricingToAPI = (
           : formIntervalsToAPI(entry.intervals || []),
       time_pricing: null,
     }));
+
+function keepGroupPricingEntry(entry: PricingFormEntry) {
+  // Clearing a rate-only card restores the existing price source.
+  if (entry.billing_mode !== "token" || entry.group_rate_multiplier !== null) return true;
+  return [
+    entry.input_price, entry.output_price, entry.cache_write_price, entry.cache_write_1h_price,
+    entry.cache_write_12h_price, entry.cache_read_price, entry.image_input_price, entry.image_output_price,
+    entry.fast_multiplier, entry.flex_multiplier, entry.ultrafast_multiplier,
+  ].some((value) => value != null) || !!Object.keys(entry.reasoning_effort_multipliers || {}).length;
+}
 
 const { t } = useI18n();
 const appStore = useAppStore();
@@ -5948,8 +5987,18 @@ const validateProfitControlForm = (form: ProfitControlFormState): boolean => {
   return true;
 };
 
-const validateGroupReasoningMultipliers = (pricing: PricingFormEntry[]): boolean => {
+const validateGroupModelPricing = (pricing: PricingFormEntry[]): boolean => {
   for (const entry of pricing) {
+    if (entry.billing_mode === "token" && entry.group_rate_multiplier != null) {
+      if (!isValidPositiveMultiplier(entry.group_rate_multiplier)) {
+        appStore.showError(t("admin.groups.modelPricing.ratePositive"));
+        return false;
+      }
+      if (!entry.models.length || entry.models.some((model) => !model.trim() || model.includes("*"))) {
+        appStore.showError(t("admin.groups.modelPricing.rateExactModels"));
+        return false;
+      }
+    }
     const error = validateReasoningEffortMultipliers(entry.reasoning_effort_multipliers, t);
     if (error) {
       appStore.showError(`${entry.models.join(", ") || t("admin.channels.form.unnamed")}: ${error}`);
@@ -5974,7 +6023,7 @@ const handleCreateGroup = async () => {
   if (!validateProfitControlForm(createForm)) {
     return;
   }
-  if (!validateGroupReasoningMultipliers(createForm.model_pricing)) return;
+  if (!validateGroupModelPricing(createForm.model_pricing)) return;
   // 模型白名单：开启且没有任何条目时阻止提交，与后端 400 对齐。
   if (
     createModelAllowlistState.enabled &&
@@ -6320,7 +6369,7 @@ const handleUpdateGroup = async () => {
   if (!validateProfitControlForm(editForm)) {
     return;
   }
-  if (!validateGroupReasoningMultipliers(editForm.model_pricing)) return;
+  if (!validateGroupModelPricing(editForm.model_pricing)) return;
   // 模型白名单：开启且没有任何条目时阻止提交，与后端 400 对齐。
   if (
     editModelAllowlistState.enabled &&

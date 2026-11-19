@@ -15,8 +15,12 @@ import (
 )
 
 func (s *GatewayService) getUserGroupRateMultiplier(ctx context.Context, userID, groupID int64, groupDefaultMultiplier float64) float64 {
+	return s.groupRateResolver().Resolve(ctx, userID, groupID, groupDefaultMultiplier)
+}
+
+func (s *GatewayService) groupRateResolver() *userGroupRateResolver {
 	if s == nil {
-		return groupDefaultMultiplier
+		return nil
 	}
 	resolver := s.userGroupRateResolver
 	if resolver == nil {
@@ -28,7 +32,7 @@ func (s *GatewayService) getUserGroupRateMultiplier(ctx context.Context, userID,
 			"service.gateway",
 		)
 	}
-	return resolver.Resolve(ctx, userID, groupID, groupDefaultMultiplier)
+	return resolver
 }
 
 // ResolveUserGroupRateMultiplier resolves the same cached multiplier used by usage billing.
@@ -799,7 +803,6 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		cacheTTLOverridden = (result.Usage.CacheCreation5mTokens + result.Usage.CacheCreation1hTokens) > 0
 	}
 
-	multiplier, imageMultiplier, pricingAt := s.recordUsageMultipliers(ctx, apiKey, user, input.PricingAt)
 	billingModel := s.recordUsageBillingModel(ctx, apiKey, result, input.ChannelUsageFields)
 	cacheStorageCost := s.cacheStorageCost(result, billingModel)
 
@@ -809,6 +812,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		requestedModel = input.OriginalModel
 	}
 
+	ctx, multiplier, imageMultiplier, pricingAt := s.recordUsageMultipliers(ctx, apiKey, user, requestedModel, input.PricingAt)
 	// 计算费用
 	cost := s.calculateRecordUsageCost(ctx, result, apiKey, billingModel, multiplier, imageMultiplier, pricingAt)
 	// response_model：按上游成功响应自报的模型计费（渠道显式开启才生效）。
@@ -843,7 +847,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	// 创建使用日志
 	accountRateMultiplier := account.BillingRateMultiplier()
 	usageLog := s.buildRecordUsageLog(ctx, input, result, apiKey, user, account, subscription,
-		requestedModel, multiplier, imageMultiplier, accountRateMultiplier, billingType, cacheTTLOverridden, cost)
+		requestedModel, usageRateMultiplier(cost, multiplier), imageMultiplier, accountRateMultiplier, billingType, cacheTTLOverridden, cost)
 
 	// 计算账号统计定价费用（使用最终上游模型匹配自定义规则）。纯存储费不是一次模型请求，
 	// 账号统计成本回落 total_cost（官方存储价）。
@@ -904,23 +908,25 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 
 // recordUsageMultipliers 返回 token / 图片售价倍率（用户专属 > 分组默认 > 系统默认，token 倍率叠加高峰因子）
 // 与计价时刻；pricingAt 为零值时取当前时刻。
-func (s *GatewayService) recordUsageMultipliers(ctx context.Context, apiKey *APIKey, user *User, pricingAt time.Time) (float64, float64, time.Time) {
+func (s *GatewayService) recordUsageMultipliers(ctx context.Context, apiKey *APIKey, user *User, requestedModel string, pricingAt time.Time) (context.Context, float64, float64, time.Time) {
 	multiplier := 1.0
 	if s.cfg != nil {
 		multiplier = s.cfg.Default.RateMultiplier
 	}
+	var modelRate *float64
 	if apiKey.GroupID != nil && apiKey.Group != nil {
-		multiplier = apiKey.Group.RateMultiplier
+		var userID int64
 		if user != nil {
-			multiplier = s.ResolveUserGroupRateMultiplier(ctx, user.ID, *apiKey.GroupID, multiplier)
+			userID = user.ID
 		}
+		multiplier, modelRate = s.groupRateResolver().resolveGroupModelRates(ctx, apiKey.Group, *apiKey.GroupID, userID, requestedModel)
 	}
 	// 高峰因子按请求时刻现算，不并入 getUserGroupRateMultiplier，以免污染 user:group 倍率缓存。
 	if pricingAt.IsZero() {
 		pricingAt = timezone.Now()
 	}
 	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, multiplier, pricingAt)
-	return multiplier, imageMultiplier, pricingAt
+	return withModelTokenRate(ctx, modelRate, apiKey.Group, pricingAt), multiplier, imageMultiplier, pricingAt
 }
 
 // recordUsageBillingModel 按计费模型来源、composite 规则与无价兜底确定计费模型。
@@ -989,7 +995,8 @@ func (s *GatewayService) QuoteUsageCost(ctx context.Context, input *RecordUsageI
 	if user == nil {
 		user = input.APIKey.User
 	}
-	multiplier, imageMultiplier, pricingAt := s.recordUsageMultipliers(ctx, input.APIKey, user, input.PricingAt)
+	requestedModel := firstNonEmpty(input.OriginalModel, input.Result.Model)
+	ctx, multiplier, imageMultiplier, pricingAt := s.recordUsageMultipliers(ctx, input.APIKey, user, requestedModel, input.PricingAt)
 	billingModel := s.recordUsageBillingModel(ctx, input.APIKey, input.Result, input.ChannelUsageFields)
 	cost := s.calculateRecordUsageCost(ctx, input.Result, input.APIKey, billingModel, multiplier, imageMultiplier, pricingAt)
 	if cost == nil {
@@ -1309,6 +1316,7 @@ func (s *GatewayService) calculateTokenCost(
 		Group:           apiKey.Group,
 		Tokens:          tokens,
 		RateMultiplier:  multiplier,
+		modelTokenRate:  modelTokenRateFromContext(ctx),
 		PricingAt:       pricingAt,
 		ServiceTier:     optionalStringValue(result.ServiceTier),
 		ReasoningEffort: optionalStringValue(result.ReasoningEffort),

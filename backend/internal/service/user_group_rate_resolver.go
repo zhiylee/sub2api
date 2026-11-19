@@ -42,32 +42,33 @@ func newUserGroupRateResolver(repo UserGroupRateRepository, cache *gocache.Cache
 }
 
 func (r *userGroupRateResolver) Resolve(ctx context.Context, userID, groupID int64, groupDefaultMultiplier float64) float64 {
+	if override, ok := r.resolveOverride(ctx, userID, groupID); ok {
+		return override
+	}
+	return groupDefaultMultiplier
+}
+
+type noUserGroupRate struct{}
+
+// Cache the override, including its absence, so each request can supply its own fallback.
+func (r *userGroupRateResolver) resolveOverride(ctx context.Context, userID, groupID int64) (float64, bool) {
 	if r == nil || userID <= 0 || groupID <= 0 {
-		return groupDefaultMultiplier
+		return 0, false
 	}
 
 	key := fmt.Sprintf("%d:%d", userID, groupID)
-	if r.cache != nil {
-		if cached, ok := r.cache.Get(key); ok {
-			if multiplier, castOK := cached.(float64); castOK {
-				userGroupRateCacheHitTotal.Add(1)
-				return multiplier
-			}
-		}
+	if cached, ok := r.cachedOverride(key); ok {
+		rate, found := cached.(float64)
+		return rate, found
 	}
 	if r.repo == nil {
-		return groupDefaultMultiplier
+		return 0, false
 	}
 	userGroupRateCacheMissTotal.Add(1)
 
 	value, err, shared := r.sf.Do(key, func() (any, error) {
-		if r.cache != nil {
-			if cached, ok := r.cache.Get(key); ok {
-				if multiplier, castOK := cached.(float64); castOK {
-					userGroupRateCacheHitTotal.Add(1)
-					return multiplier, nil
-				}
-			}
+		if multiplier, ok := r.cachedOverride(key); ok {
+			return multiplier, nil
 		}
 
 		userGroupRateCacheLoadTotal.Add(1)
@@ -76,28 +77,37 @@ func (r *userGroupRateResolver) Resolve(ctx context.Context, userID, groupID int
 			return nil, repoErr
 		}
 
-		multiplier := groupDefaultMultiplier
+		var cached any = noUserGroupRate{}
 		if userRate != nil {
-			multiplier = *userRate
+			cached = *userRate
 		}
 		if r.cache != nil {
-			r.cache.Set(key, multiplier, r.cacheTTL)
+			r.cache.Set(key, cached, r.cacheTTL)
 		}
-		return multiplier, nil
+		return cached, nil
 	})
 	if shared {
 		userGroupRateCacheSFSharedTotal.Add(1)
 	}
 	if err != nil {
 		userGroupRateCacheFallbackTotal.Add(1)
-		logger.LegacyPrintf(r.logComponent, "get user group rate failed, fallback to group default: user=%d group=%d err=%v", userID, groupID, err)
-		return groupDefaultMultiplier
+		logger.LegacyPrintf(r.logComponent, "get user group rate failed: user=%d group=%d err=%v", userID, groupID, err)
+		return 0, false
 	}
 
 	multiplier, ok := value.(float64)
-	if !ok {
-		userGroupRateCacheFallbackTotal.Add(1)
-		return groupDefaultMultiplier
+	return multiplier, ok
+}
+
+func (r *userGroupRateResolver) cachedOverride(key string) (any, bool) {
+	if r.cache == nil {
+		return nil, false
 	}
-	return multiplier
+	cached, _ := r.cache.Get(key)
+	switch cached.(type) {
+	case float64, noUserGroupRate:
+		userGroupRateCacheHitTotal.Add(1)
+		return cached, true
+	}
+	return nil, false
 }
