@@ -332,9 +332,16 @@ func (h *APIKeyHandler) GetAvailableGroups(c *gin.Context) {
 		return
 	}
 
-	out := make([]dto.Group, 0, len(groups))
+	type availableGroup struct {
+		*dto.Group
+		ModelRates []service.GroupModelRate `json:"model_rates,omitempty"`
+	}
+	out := make([]availableGroup, 0, len(groups))
 	for i := range groups {
-		out = append(out, *dto.GroupFromService(&groups[i]).Localized(c.GetHeader("Accept-Language")))
+		out = append(out, availableGroup{
+			Group:      dto.GroupFromService(&groups[i]).Localized(c.GetHeader("Accept-Language")),
+			ModelRates: groups[i].ModelRates(),
+		})
 	}
 	response.Success(c, out)
 }

@@ -58,6 +58,25 @@ function mountTable(
 }
 
 describe('PlazaModelPricingTable', () => {
+  it('applies each model rate to its base and period prices until a user rate overrides it', async () => {
+    const model = tokenModel({
+      group_rate_multiplier: 0.0004,
+      time_pricing: { timezone: 'UTC', periods: [{ start_time: '09:00:00', end_time: '12:00:00', multiplier: 1.2 }] },
+    })
+    const wrapper = mountTable([model], 0.3)
+    const rows = () => wrapper.findAll('tbody tr').map(row => row.text())
+    expect(rows()[0]).toContain('$0.0012')
+    expect(rows()[0]).toContain('modelPlaza.table.modelRate')
+    expect(rows()[1]).toContain('$0.00144')
+    expect(rows()[1]).toContain('0.00048x')
+
+    await wrapper.setProps({ userRateMultiplier: 0.3 })
+    expect(rows()[0]).toContain('$0.90')
+    expect(rows()[0]).not.toContain('modelPlaza.table.modelRate')
+    expect(rows()[1]).toContain('$1.08')
+    wrapper.unmount()
+  })
+
   it.each([false, true])('shows independent 12h prices without a 1h label (intervals=%s)', (intervals) => {
     const model = tokenModel({ name: 'gpt-6-luna', platform: 'openai' })
     model.pricing!.cache_write_price = null

@@ -586,6 +586,24 @@ describe('user KeysView column settings', () => {
       getAvailableGroups.mockResolvedValue(availableGroups)
     })
 
+    it('offers model rates only when the group has no user-specific rate', async () => {
+      const modelRates = [{ model: 'gpt-6.1-sol', multiplier: 0.2 }]
+      const groups = [
+        { id: 1, name: 'GPT Prime', platform: 'openai', rate_multiplier: 0.3, model_rates: modelRates },
+        { id: 2, name: 'GPT Standard', platform: 'openai', rate_multiplier: 0.3, model_rates: modelRates },
+      ]
+      getAvailableGroups.mockResolvedValue(groups)
+      getUserGroupRates.mockResolvedValue({ 2: 0.3 })
+
+      const wrapper = await openCreate()
+      const options = groupSelect(wrapper).props('options')
+      expect(options).toMatchObject([
+        { value: 1, modelRates, userRate: null },
+        { value: 2, modelRates: [], userRate: 0.3 },
+      ])
+      wrapper.unmount()
+    })
+
     it('classifies all configured platforms and retains the complete table filter', async () => {
       const wrapper = await openCreate()
       expect(wrapper.findAll('input[name="key-provider"]')).toHaveLength(4)

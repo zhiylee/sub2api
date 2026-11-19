@@ -114,14 +114,14 @@ func (s *OpenAIGatewayService) RecordCyberPolicyUsageLog(ctx context.Context, in
 
 // ResolveUserGroupRateMultiplier resolves the same cached multiplier used by OpenAI usage billing.
 func (s *OpenAIGatewayService) ResolveUserGroupRateMultiplier(ctx context.Context, userID, groupID int64, groupDefaultMultiplier float64) float64 {
+	return s.groupRateResolver().Resolve(ctx, userID, groupID, groupDefaultMultiplier)
+}
+
+func (s *OpenAIGatewayService) groupRateResolver() *userGroupRateResolver {
 	if s == nil {
-		return groupDefaultMultiplier
+		return nil
 	}
-	resolver := s.userGroupRateResolver
-	if resolver == nil {
-		resolver = newUserGroupRateResolver(nil, nil, resolveUserGroupRateCacheTTL(s.cfg), nil, "service.openai_gateway")
-	}
-	return resolver.Resolve(ctx, userID, groupID, groupDefaultMultiplier)
+	return s.userGroupRateResolver
 }
 
 // openAIUsagePricingAt 返回本次用量记录使用的定价时刻：优先请求级 PricingAt
@@ -203,13 +203,14 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	tokens := result.Usage.billingUsageTokens()
 	actualInputTokens := tokens.InputTokens
 
-	// Get rate multiplier
+	requestedModel := firstNonEmpty(input.OriginalModel, result.Model)
 	multiplier := 1.0
 	if s.cfg != nil {
 		multiplier = s.cfg.Default.RateMultiplier
 	}
+	var modelRate *float64
 	if apiKey.GroupID != nil && apiKey.Group != nil {
-		multiplier = s.ResolveUserGroupRateMultiplier(ctx, user.ID, *apiKey.GroupID, apiKey.Group.RateMultiplier)
+		multiplier, modelRate = s.groupRateResolver().resolveGroupModelRates(ctx, apiKey.Group, *apiKey.GroupID, user.ID, requestedModel)
 	}
 	// token 倍率叠加高峰因子（token 计费含图片 token，图片按次倍率不受影响）。
 	// 高峰因子按请求级 PricingAt 现算（与利润门 D 同源同刻，跨峰谷请求不中途
@@ -217,6 +218,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	// Resolve，以免污染 user:group 倍率缓存。
 	baseMultiplier := multiplier
 	pricingAt := openAIUsagePricingAt(input)
+	ctx = withModelTokenRate(ctx, modelRate, apiKey.Group, pricingAt)
 	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, baseMultiplier, pricingAt)
 	videoMultiplier := resolveVideoRateMultiplier(apiKey, baseMultiplier)
 
@@ -365,11 +367,6 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		}
 	}
 
-	// 确定 RequestedModel（渠道映射前的原始模型）
-	requestedModel := result.Model
-	if input.OriginalModel != "" {
-		requestedModel = input.OriginalModel
-	}
 	sentModel := upstreamSentModel(result.Model, result.UpstreamModel)
 	if result.UpstreamResponseModelConflict {
 		logger.L().Warn("upstream_response_model_conflict",
@@ -446,7 +443,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	} else if result.ImageCount > 0 && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
 		usageLog.RateMultiplier = imageMultiplier
 	} else {
-		usageLog.RateMultiplier = multiplier
+		usageLog.RateMultiplier = usageRateMultiplier(cost, multiplier)
 	}
 	usageLog.AccountRateMultiplier = &accountRateMultiplier
 	usageLog.BillingType = billingType
@@ -761,6 +758,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 		Ctx: ctx, Model: billingModel, Tokens: tokens, RequestCount: 1, RateMultiplier: multiplier,
 		PricingAt: pricingAt, ServiceTier: serviceTier, LongContextBillingEnabled: longContextBillingGate,
 		DisableModelLongContextPricing: modelLongContextExempt,
+		modelTokenRate:                 modelTokenRateFromContext(ctx),
 	}
 	if s.resolver != nil && apiKey.Group != nil {
 		input.GroupID = &apiKey.Group.ID

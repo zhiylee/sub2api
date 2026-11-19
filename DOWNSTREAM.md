@@ -36,6 +36,7 @@ git log --format='%h %s' --grep='^Downstream-Patch: FAST-001$' v0.2.23..release/
 | 编号 | 功能 | 处理 | 迁移单元与来源 |
 | --- | --- | --- | --- |
 | BILL-001 | OpenAI 按最终出站 `service_tier` 计费 | 保留。官方 API Key 路径仍允许响应档位降低计费 | `7d60fe775` |
+| BILL-002 | 分组逐模型 Token 倍率 | 官方支持逐模型定价和倍率优先级、且兼容存量配置后可退役 | 独立功能提交 |
 | FAST-001 | 账号级强制 Fast / 免费 Fast | 保留。符合资格的分组 Ultra Fast 先于账号和分组的 Fast，最终档位继续经过全局策略 | `cfbd5910c` |
 | CTX-001 | Codex Desktop Page、浏览器上下文和 HTTP 桥接 | 复用官方 HTTP 格式与零拷贝预筛选，补齐 `browser_tabs` 和 WS 转 HTTP | `80e98e0fd` |
 | CI-001 | 固定版本 hotfix 镜像及产物版本验证 | 保留上下文、Fast 与缓存计费回归 | `e9f816b1e` |
@@ -53,6 +54,12 @@ Fast 配置继续存储在 `accounts.extra`，不增加数据库迁移。免费 
 30m / 12h 用量桶，以同一份 token 和定价重算 Standard 客户扣费，保留 Fast 总费用和档位记录。
 账号设置、分组设置和全局策略的优先关系见
 [账号级 Fast 说明](backend/dev-docs/openai-account-fast.md)。
+
+BILL-002 把 `group_rate_multiplier` 存在现有分组 `model_pricing` 价卡。按客户端模型名匹配，
+用户专属倍率优先，随后是模型倍率和分组倍率，Token 计费再叠加订阅高峰倍率。
+只有倍率的价卡沿用现有单价来源。主要规则在 `backend/internal/service/group_model_rate.go`，
+使用现有用量日志倍率列与分组接口。迁移或退役时一并核对认证缓存、利润门、在途余额预留、
+WebSocket 逐轮刷新、密钥选组选项和模型广场。
 
 UPD-001 / UPD-002 参考历史 `7af4074ea`、`79824dd94`、`2db65f778` 的行为重新收窄，
 未整批恢复旧实现。官方的下载、校验、替换、操作锁和重启流程继续保留。

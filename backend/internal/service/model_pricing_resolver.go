@@ -152,6 +152,9 @@ func matchGroupModelPricing(group *Group, model string) *ChannelModelPricing {
 	var wildcard *ChannelModelPricing
 	for i := range group.ModelPricing {
 		entry := &group.ModelPricing[i]
+		if groupModelRateOnly(entry) {
+			continue
+		}
 		for _, pattern := range entry.Models {
 			normalized := normalizeChannelPricingModelName(pattern)
 			if normalized == model {

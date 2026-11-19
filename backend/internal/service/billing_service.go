@@ -218,6 +218,7 @@ type CostBreakdown struct {
 	ActualCost                float64 // 应用倍率后的实际费用
 	BillingMode               string  // 计费模式（"token"/"per_request"/"image"），由 CalculateCostUnified 填充
 	LongContextBillingApplied bool
+	modelTokenRate            *float64
 }
 
 func applyCostBreakdownMultiplier(cost *CostBreakdown, multiplier float64) {
@@ -1706,6 +1707,7 @@ type CostInput struct {
 	UsageUnits                float64 // 音频等连续计量单位（分钟/小时/百万字符）
 	SizeTier                  string  // 按次/图片模式的层级标签（"1K","2K","4K","HD" 等）
 	RateMultiplier            float64
+	modelTokenRate            *float64
 	PricingAt                 time.Time             // 渠道分时定价使用的计费时刻
 	ServiceTier               string                // "priority","flex","" 等
 	ReasoningEffort           string                // 最终转发的推理等级，按匹配定价中配置的等级倍率计费
@@ -1729,7 +1731,8 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 		if err != nil {
 			return nil, err
 		}
-		breakdown := s.computeTokenBreakdown(pricing, input.Tokens, input.RateMultiplier, input.ServiceTier, applyLongContextBilling && !input.DisableModelLongContextPricing)
+		breakdown := s.computeTokenBreakdown(pricing, input.Tokens, tokenRateOr(input.modelTokenRate, input.RateMultiplier), input.ServiceTier, applyLongContextBilling && !input.DisableModelLongContextPricing)
+		breakdown.modelTokenRate = input.modelTokenRate
 		applyCostBreakdownMultiplier(breakdown, reasoningEffortBillingMultiplier(input.ReasoningEffort, pricing.ReasoningEffortMultipliers))
 		return breakdown, nil
 	}
@@ -1758,7 +1761,11 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 			applyCostBreakdownMultiplier(breakdown, reasoningEffortBillingMultiplier(input.ReasoningEffort, resolved.channelPricing.ReasoningEffortMultipliers))
 		}
 	default: // BillingModeToken
+		input.RateMultiplier = tokenRateOr(input.modelTokenRate, input.RateMultiplier)
 		breakdown, err = s.calculateTokenCost(resolved, input)
+		if breakdown != nil {
+			breakdown.modelTokenRate = input.modelTokenRate
+		}
 	}
 	if err == nil && breakdown != nil {
 		breakdown.BillingMode = string(resolved.Mode)

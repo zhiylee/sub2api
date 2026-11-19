@@ -58,7 +58,7 @@
       </thead>
       <tbody>
         <tr
-          v-for="{ model: m, period, key } in rows"
+          v-for="{ model: m, period, key, rate } in rows"
           :key="key"
           class="border-b border-gray-100 transition-colors last:border-b-0 hover:bg-gray-50/70 dark:border-dark-800 dark:hover:bg-dark-800/50"
         >
@@ -121,10 +121,10 @@
                   class="whitespace-nowrap text-xs leading-5"
                 >
                   <span class="mr-1 font-sans font-normal text-gray-400 dark:text-dark-500" :title="tierHint(m)">{{ tierLabel(iv) }}</span>
-                  {{ paidPerMillion(iv.input_price, period) }}
+                  {{ paidPerMillion(iv.input_price, rate) }}
                 </div>
               </template>
-              <template v-else>{{ paidPerMillion(m.pricing?.input_price, period) }}</template>
+              <template v-else>{{ paidPerMillion(m.pricing?.input_price, rate) }}</template>
             </td>
             <td class="pz-cell px-3 py-2.5 align-middle font-mono font-semibold text-gray-900 dark:text-gray-50">
               <template v-if="tokenIntervals(m).length">
@@ -134,10 +134,10 @@
                   class="whitespace-nowrap text-xs leading-5"
                   :title="tierHint(m)"
                 >
-                  {{ paidPerMillion(iv.output_price, period) }}
+                  {{ paidPerMillion(iv.output_price, rate) }}
                 </div>
               </template>
-              <template v-else>{{ paidPerMillion(m.pricing?.output_price, period) }}</template>
+              <template v-else>{{ paidPerMillion(m.pricing?.output_price, rate) }}</template>
             </td>
             <td class="pz-cell px-3 py-2.5 align-middle">
               <template v-if="hasTierCachePricing(tokenIntervals(m))">
@@ -149,16 +149,16 @@
                 >
                   <template v-if="iv.cache_write_price != null || iv.cache_write_1h_price != null || iv.cache_write_12h_price != null || iv.cache_read_price != null">
                     <span class="font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheWriteShort') }}</span>
-                    {{ paidPerMillion(iv.cache_write_price, period) }}
+                    {{ paidPerMillion(iv.cache_write_price, rate) }}
                     <template v-if="iv.cache_write_1h_price != null"
-                      ><span class="font-sans font-normal text-gray-400 dark:text-dark-500"> (1h </span>{{ paidPerMillion(iv.cache_write_1h_price, period)
+                      ><span class="font-sans font-normal text-gray-400 dark:text-dark-500"> (1h </span>{{ paidPerMillion(iv.cache_write_1h_price, rate)
                       }}<span class="font-sans font-normal text-gray-400 dark:text-dark-500">)</span></template
                     ><template v-if="iv.cache_write_12h_price != null"
-                      ><span class="font-sans font-normal text-gray-400 dark:text-dark-500"> (12h </span>{{ paidPerMillion(iv.cache_write_12h_price, period)
+                      ><span class="font-sans font-normal text-gray-400 dark:text-dark-500"> (12h </span>{{ paidPerMillion(iv.cache_write_12h_price, rate)
                       }}<span class="font-sans font-normal text-gray-400 dark:text-dark-500">)</span></template
                     >
                     <span class="ml-1 font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheReadShort') }}</span>
-                    {{ paidPerMillion(iv.cache_read_price, period) }}
+                    {{ paidPerMillion(iv.cache_read_price, rate) }}
                   </template>
                   <span v-else class="text-gray-400 dark:text-dark-500">-</span>
                 </div>
@@ -169,18 +169,18 @@
               >
                 <div>
                   <span class="mr-1 font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheWrite') }}</span>
-                  {{ paidPerMillion(m.pricing?.cache_write_price, period)
+                  {{ paidPerMillion(m.pricing?.cache_write_price, rate)
                   }}<template v-if="m.pricing?.cache_write_1h_price != null"
-                    ><span class="font-sans font-normal text-gray-400 dark:text-dark-500"> (1h </span>{{ paidPerMillion(m.pricing.cache_write_1h_price, period)
+                    ><span class="font-sans font-normal text-gray-400 dark:text-dark-500"> (1h </span>{{ paidPerMillion(m.pricing.cache_write_1h_price, rate)
                     }}<span class="font-sans font-normal text-gray-400 dark:text-dark-500">)</span></template
                   ><template v-if="m.pricing?.cache_write_12h_price != null"
-                    ><span class="font-sans font-normal text-gray-400 dark:text-dark-500"> (12h </span>{{ paidPerMillion(m.pricing.cache_write_12h_price, period)
+                    ><span class="font-sans font-normal text-gray-400 dark:text-dark-500"> (12h </span>{{ paidPerMillion(m.pricing.cache_write_12h_price, rate)
                     }}<span class="font-sans font-normal text-gray-400 dark:text-dark-500">)</span></template
                   >
                 </div>
                 <div>
                   <span class="mr-1 font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheRead') }}</span>
-                  {{ paidPerMillion(m.pricing?.cache_read_price, period) }}
+                  {{ paidPerMillion(m.pricing?.cache_read_price, rate) }}
                 </div>
               </div>
               <span v-else class="text-gray-400 dark:text-dark-500">-</span>
@@ -297,19 +297,23 @@
             <span
               v-if="period"
               class="font-bold text-primary-600 dark:text-primary-400"
-              :title="t('modelPlaza.table.timePricingRateHint', { rate: effectiveRate, multiplier: period.multiplier })"
-              >{{ periodRate(period) }}x</span
+              :title="t('modelPlaza.table.timePricingRateHint', { rate: tokenRate(m), multiplier: period.multiplier })"
+              >{{ Number(rate.toPrecision(10)) }}x</span
             >
             <span
               v-else-if="usesIndependentMediaRate(m)"
               class="font-bold text-gray-700 dark:text-gray-300"
-              >{{ requestRate(m) }}x</span
+              >{{ rate }}x</span
             >
             <template v-else-if="hasCustomRate">
               <span class="mr-1 text-gray-400 line-through dark:text-dark-500">{{ rateMultiplier }}x</span>
-              <span class="font-bold text-primary-600 dark:text-primary-400">{{ effectiveRate }}x</span>
+              <span class="font-bold text-primary-600 dark:text-primary-400">{{ rate }}x</span>
             </template>
-            <span v-else class="font-bold text-gray-700 dark:text-gray-300">{{ effectiveRate }}x</span>
+            <span v-else-if="hasModelRate(m)" class="font-bold text-primary-600 dark:text-primary-400">
+              {{ rate }}x
+              <span class="block whitespace-nowrap font-sans font-medium">{{ t('modelPlaza.table.modelRate') }}</span>
+            </span>
+            <span v-else class="font-bold text-gray-700 dark:text-gray-300">{{ rate }}x</span>
           </td>
         </tr>
       </tbody>
@@ -401,6 +405,14 @@ function billingMode(m: PlazaModel): BillingMode {
   return (m.pricing?.billing_mode || BILLING_MODE_TOKEN) as BillingMode
 }
 
+function hasModelRate(m: PlazaModel): boolean {
+  return billingMode(m) === BILLING_MODE_TOKEN && props.userRateMultiplier == null && m.group_rate_multiplier != null
+}
+
+function tokenRate(m: PlazaModel): number {
+  return props.userRateMultiplier ?? m.group_rate_multiplier ?? props.rateMultiplier
+}
+
 function billingModeLabel(m: PlazaModel): string {
   return billingMode(m) === BILLING_MODE_IMAGE
     ? t('modelPlaza.table.perImage')
@@ -415,29 +427,26 @@ interface PlazaRow {
   model: PlazaModel
   period: PlazaTimePricingPeriod | null
   key: string
+  rate: number
 }
 
 const rows = computed<PlazaRow[]>(() =>
   sortedModels.value.flatMap((m) => {
-    const base: PlazaRow = { model: m, period: null, key: `${m.platform}:${m.name}` }
+    const rate = billingMode(m) === BILLING_MODE_TOKEN ? tokenRate(m) : requestRate(m)
+    const base: PlazaRow = { model: m, period: null, key: `${m.platform}:${m.name}`, rate }
     const periodRows = timePeriods(m).map<PlazaRow>((p, idx) => ({
       model: m,
       period: p,
+      rate: rate * p.multiplier,
       key: `${m.platform}:${m.name}:${idx}`
     }))
     return [base, ...periodRows]
   })
 )
 
-/** 时段行的生效倍率 = 生效倍率 × 时段倍率(去掉浮点噪声)。 */
-function periodRate(period: PlazaTimePricingPeriod): number {
-  return Math.round(effectiveRate.value * period.multiplier * 1000) / 1000
-}
-
 /** 实付价 = 渠道单价 × 生效倍率(时段行再乘时段倍率),按 $/1M token 展示。 */
-function paidPerMillion(value: number | null | undefined, period: PlazaTimePricingPeriod | null = null): string {
+function paidPerMillion(value: number | null | undefined, rate: number): string {
   if (value == null) return '-'
-  const rate = period ? periodRate(period) : effectiveRate.value
   return formatScaled(value * rate, PER_MILLION, MIN_DECIMALS)
 }
 

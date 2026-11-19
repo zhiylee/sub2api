@@ -22,10 +22,11 @@ type PlazaOfficialPricing struct {
 
 // PlazaModel 模型广场中单个模型条目：按实收口径合成的展示定价 + 官方参考价。
 type PlazaModel struct {
-	Name            string
-	Platform        string
-	Pricing         *ChannelModelPricing
-	OfficialPricing *PlazaOfficialPricing
+	Name                string
+	Platform            string
+	Pricing             *ChannelModelPricing
+	GroupRateMultiplier *float64
+	OfficialPricing     *PlazaOfficialPricing
 	// LongContextBasis 多档时的计价基准（整单 / 仅超出部分），单档为空。
 	LongContextBasis ContextPricingBasis
 	// TimePricing 计费会生效的分时倍率时段；无分时为 nil。
@@ -213,8 +214,12 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 		})
 		g := groupEnt[gid]
 		for j := range pg.Models {
-			s.fillDisplayPricing(ctx, &pg.Models[j], g)
-			pg.Models[j].OfficialPricing = s.lookupOfficialPricing(ctx, pg.Models[j].Name, officialMemo)
+			model := &pg.Models[j]
+			s.fillDisplayPricing(ctx, model, g)
+			if model.Pricing != nil && isTokenBillingMode(model.Pricing.BillingMode) {
+				model.GroupRateMultiplier = g.modelRateMultiplier(model.Name)
+			}
+			model.OfficialPricing = s.lookupOfficialPricing(ctx, model.Name, officialMemo)
 		}
 		out = append(out, *pg)
 	}

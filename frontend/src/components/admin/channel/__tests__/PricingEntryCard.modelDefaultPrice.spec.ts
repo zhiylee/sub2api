@@ -67,6 +67,19 @@ describe('PricingEntryCard default price auto-fill', () => {
     })
   })
 
+  it('leaves unit prices empty when configuring a group model rate', async () => {
+    const wrapper = shallowMount(PricingEntryCard, {
+      props: { entry: createEntry(), skipPriceAutofill: true },
+    })
+    wrapper.findComponent({ name: 'ModelTagInput' }).vm.$emit('update:models', ['claude-opus-4-8'])
+    await flushPromises()
+
+    expect(getModelDefaultPricing).not.toHaveBeenCalled()
+    expect(emittedEntries(wrapper)).toMatchObject([
+      { models: ['claude-opus-4-8'], input_price: null, output_price: null },
+    ])
+  })
+
   it('does not overwrite prices when appending a model to an entry that already has one', async () => {
     const entry = createEntry(['claude-opus-4-7'])
     const wrapper = addModels(entry, ['claude-opus-4-7', 'claude-opus-4-8'])

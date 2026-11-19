@@ -101,6 +101,7 @@
 
         <!-- Token mode -->
         <div v-if="entry.billing_mode === 'token'">
+          <slot name="token-rate" />
           <!-- Default prices (fallback when no interval matches) -->
           <label class="mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400">
             {{ t('admin.channels.form.defaultPrices') }}
@@ -331,6 +332,7 @@ const props = withDefaults(defineProps<{
   hideTokenIntervals?: boolean
   enableTimePricing?: boolean
   enableTierMultipliers?: boolean
+  skipPriceAutofill?: boolean
 }>(), {
   hideTokenIntervals: false,
   enableTimePricing: false,
@@ -423,6 +425,7 @@ function removeInterval(idx: number) {
 async function onModelsUpdate(newModels: string[]) {
   const oldModels = props.entry.models
   emit('update', { ...props.entry, models: newModels })
+  if (props.skipPriceAutofill) return
 
   // 仅在「空条目首次加入单个模型」时自动填充默认价：
   // 条目已有模型时（即使价格留空、按各模型的官方默认价回退）追加模型不应改写整条价格，
@@ -439,7 +442,7 @@ async function onModelsUpdate(newModels: string[]) {
   // 查询第一个新增模型的默认价格
   try {
     const result = await channelsAPI.getModelDefaultPricing(addedModels[0])
-    if (result.found) {
+    if (result.found && !props.skipPriceAutofill) {
       emit('update', {
         ...props.entry,
         models: newModels,

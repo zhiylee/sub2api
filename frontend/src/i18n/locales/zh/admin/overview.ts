@@ -1111,7 +1111,12 @@ export default {
         description: '匹配模型后覆盖渠道和内置价格。长上下文阶梯沿用官方/预设价卡，无需再手填区间。音频可用按次层级配置 realtime、tts、stt。',
         longContext: '启用长上下文阶梯定价',
         longContextHint: '勾选后按渠道区间或官方预设阶梯计费；关闭后默认按第一档，账号显式开启时除外。',
-        add: '添加模型价格'
+        add: '添加模型价格',
+        addRate: '添加模型倍率',
+        rate: '模型 Token 倍率',
+        rateFallback: '留空时使用分组倍率',
+        ratePositive: '模型倍率必须大于 0',
+        rateExactModels: '请为模型倍率填写完整模型名'
       },
       voicePricing: {
         title: 'Grok Voice 定价',

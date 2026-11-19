@@ -20,6 +20,7 @@
       >
         {{ description }}
       </span>
+      <slot name="after-description" />
     </div>
 
     <!-- Right: rate pill + checkmark (vertically centered to first row) -->
