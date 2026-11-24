@@ -12,21 +12,20 @@
 
 ## 当前基线
 
-- 官方正式版为 `v0.2.23`，提交为 `5af9afb588c4b014b3df9db7d4073af1f8ae01b6`。 [官方 Release](https://github.com/Wei-Shaw/sub2api/releases/tag/v0.2.23)
-- 集成分支为 `release/0.2.23`，版本为 `0.2.23-zy.2`，对应发布 tag 为 `v0.2.23-zy.2`。
-- 二开来源为已发布的 `v0.2.21-zy.1`（`1786061f7`）。官方 `v0.2.23` 已包含 `v0.2.22`。
+- 官方正式版为 `v0.2.25`，提交为 `348997267d756eab5729bb6b78a275a15d18796a`，包含 `v0.2.24`。 [官方 Release](https://github.com/Wei-Shaw/sub2api/releases/tag/v0.2.25)
+- 集成分支为 `release/0.2.25`，版本为 `0.2.25-zy.1`，计划发布 tag 为 `v0.2.25-zy.1`。
+- 二开来源为 `release/0.2.23` 的 `32339fac5`，包含 `v0.2.23-zy.2` 和之后的账号免费 Ultra Fast。
 
 ## 提交组织
 
-五个功能提交依次迁移出站档位计费、账号 Fast、上下文兼容、hotfix 镜像和自有升级渠道。
-账号 Fast 提交包含 Ultra Fast 优先级和缓存 TTL 回归。自有升级提交包含运行逻辑、发布和安装适配。
-官方已将 Go 1.27.4 用于模块、Docker、CI 和发布流程，BUILD-001 随本次同步退役。
+按沿用顺序迁移出站档位计费、账号 Fast、Codex 上下文、hotfix 镜像、自有升级、逐模型倍率和账号免费 Ultra Fast。
+自有升级提交包含运行逻辑、发布和安装适配。Go 1.27.4 由官方模块、Docker、CI 和发布流程提供。
 
-每个功能提交使用稳定的 `Downstream-Patch` 标识，便于重排或迁移后定位，避免文档依赖旧提交哈希：
+每个功能提交使用稳定的 `Downstream-Patch` 标识。以下命令可按功能定位迁移后的提交。
 
 ```sh
-git log --reverse --format='%h %s' v0.2.23..release/0.2.23
-git log --format='%h %s' --grep='^Downstream-Patch: FAST-001$' v0.2.23..release/0.2.23
+git log --reverse --format='%h %s' v0.2.25..release/0.2.25
+git log --format='%h %s' --grep='^Downstream-Patch: FAST-001$' v0.2.25..release/0.2.25
 ```
 
 后续同步仍按功能判断官方覆盖情况；未发布的本地修正并入对应功能，已发布历史保留后续修复记录。
@@ -35,20 +34,20 @@ git log --format='%h %s' --grep='^Downstream-Patch: FAST-001$' v0.2.23..release/
 
 | 编号 | 功能 | 处理 | 迁移单元与来源 |
 | --- | --- | --- | --- |
-| BILL-001 | OpenAI 按最终出站 `service_tier` 计费 | 保留。官方 API Key 路径仍允许响应档位降低计费 | `7d60fe775` |
-| BILL-002 | 分组逐模型 Token 倍率 | 官方支持逐模型定价和倍率优先级、且兼容存量配置后可退役 | `77b0f99d8` |
-| FAST-001 | 账号级强制 Fast / 免费 Fast / 免费 Ultra Fast | 保留。符合资格的分组 Ultra Fast 先于账号和分组的 Fast，最终档位继续经过全局策略 | `cfbd5910c` |
-| CTX-001 | Codex Desktop Page、浏览器上下文和 HTTP 桥接 | 复用官方 HTTP 格式与零拷贝预筛选，补齐 `browser_tabs` 和 WS 转 HTTP | `80e98e0fd` |
-| CI-001 | 固定版本 hotfix 镜像及产物版本验证 | 保留上下文、Fast 与缓存计费回归 | `e9f816b1e` |
-| TEST-001 | Fast、Ultra Fast 与缓存写入回归 | 随 FAST-001 迁移，覆盖账号档位优先级、GPT-6.2 套餐资格和 30m / 12h 用量 | `cfbd5910c` |
-| UPD-001 | 自有在线升级、远程回退与 zy 修订排序 | 保留 `zhiylee/sub2api` 的正式 zy 发行规则、独立缓存和发布适配 | `79f11cad3` |
-| UPD-002 | 独立展示官方发布与新版提示 | 保留官方版本查询、独立缓存和前端提示 | `79f11cad3` |
-| BUILD-001 | Go 1.27.4 工具链 | 官方已覆盖，二开补丁退役 | `1786061f7` |
+| BILL-001 | OpenAI 按最终出站 `service_tier` 计费 | 保留。响应档位作为诊断信息 | `9f1bf652b` |
+| BILL-002 | 分组逐模型 Token 倍率 | 保留倍率优先级及已有配置，兼容官方模型广场的复制模型 ID | `77b0f99d8` |
+| FAST-001 | 账号级强制 Fast / 免费 Fast / 免费 Ultra Fast | 保留。符合资格的分组 Ultra Fast 优先，最终档位继续经过全局策略 | `feb359369`、`32339fac5` |
+| CTX-001 | Codex Desktop Page、浏览器上下文和 HTTP 桥接 | 将官方新增的上下文类型并入 HTTP 与 WS 转 HTTP 的共享处理，保留 `browser_tabs` | `c248ee9fc` |
+| CI-001 | 固定版本 hotfix 镜像及产物版本验证 | 保留上下文、Fast 与缓存计费回归 | `afdea1301`、`1cd7a12ac` |
+| TEST-001 | Fast、Ultra Fast 与缓存写入回归 | 随 FAST-001 迁移，覆盖账号档位优先级、GPT-6.2 套餐资格和 30m / 12h 用量 | `feb359369`、`32339fac5` |
+| UPD-001 | 自有在线升级、远程回退与 zy 修订排序 | 保留 `zhiylee/sub2api` 的正式 zy 发行规则、独立缓存和发布适配 | `c72f69c40` |
+| UPD-002 | 独立展示官方发布与新版提示 | 保留官方版本查询、独立缓存和前端提示 | `c72f69c40` |
+| BUILD-001 | Go 1.27.4 工具链 | 自 `v0.2.23` 起由官方覆盖 | `1786061f7` |
 
-官方 PR #8769 已在 HTTP Responses 入口处理 Page、`browser_info`、`goal_objective` 和
-`untrusted_context`。HTTP handler 与 WS 转 HTTP 每轮重放共用官方预筛选和
-`backend/internal/pkg/codexcontext` 中的归一化。Page 的空 `call_id`、CRLF 分片头和单片
-快照沿用官方格式。二开的 `agent.browser_tabs` 要求无 `call_id` 且匹配 ambient envelope。
+HTTP Responses 与 WS 转 HTTP 每轮重放共用官方预筛选和 `backend/internal/pkg/codexcontext`
+中的归一化。官方新增的 `ide_context`、`untrusted_content` 和 `proposed_plan` 沿用各自的
+文本校验和格式。Page 的空 `call_id`、CRLF 分片头和单片快照沿用官方格式。
+二开的 `agent.browser_tabs` 要求无 `call_id` 且匹配 ambient envelope。
 
 Fast 配置存储在 `accounts.extra`。免费 Fast 和免费 Ultra Fast 复用 30m / 12h 用量桶，
 以同一份 token 和定价重算 Standard 客户扣费，保留实际档位和对应的总费用。
@@ -78,24 +77,26 @@ Release 页的一键安装命令从对应版本 tag 获取自有安装脚本，�
 5. 限制本地并发，运行受影响的回归。发布前由 CI 完成全量测试和构建。
 
 功能退役时必须连同其后续修复、消费者、已有配置和数据兼容性一起检查。
-此次迁移范围为上一个正式 fork 版本 `v0.2.21-zy.1` 中的功能。
 
 ## 本地验证
 
-在仓库根目录执行（Go 使用 `backend/go.mod` 对应工具链）：
+在仓库根目录执行，Go 使用 `backend/go.mod` 对应的工具链。
 
 ```sh
 GOMAXPROCS=1 GOMEMLIMIT=768MiB go -C backend test -p=1 -parallel=1 -tags=unit -count=1 \
-  -run '^Test(Normalize(PageContext|Codex)|Codex(PageContext|CallOutputGate)|PrepareOpenAIWSHTTPBridgeBody|OpenAIAccountFast|EvaluateOpenAIFastPolicy|ApplyOpenAIFastPolicyTo|GPT62|ResolveBillingServiceTier|ResolveOpenAIServiceTierBilling|ApplyServiceTierBillingResolution|OpenAICacheWrite|OpenAIGatewayServiceRecordUsage_)' \
+  -run '^Test(Normalize(PageContext|Codex)|Codex(PageContext|CallOutputGate)|PrepareOpenAIWSHTTPBridgeBody|OpenAIAccountFast|EvaluateOpenAIFastPolicy|ApplyOpenAIFastPolicyTo|GPT62|ResolveBillingServiceTier|ResolveOpenAIServiceTierBilling|ApplyServiceTierBillingResolution|OpenAICacheWrite|OpenAIGatewayServiceRecordUsage_|GroupModelRate)' \
   ./internal/pkg/codexcontext ./internal/service ./internal/handler
 pnpm --dir frontend exec vitest run --maxWorkers=1 --minWorkers=1 --no-file-parallelism \
   src/components/account/__tests__/EditAccountModal.spec.ts \
+  src/components/admin/channel/__tests__/PricingEntryCard.modelDefaultPrice.spec.ts \
+  src/components/modelPlaza/__tests__/PlazaModelPricingTable.spec.ts \
+  src/views/user/__tests__/KeysView.spec.ts \
   src/i18n/__tests__/localeKeyCompleteness.spec.ts
 NODE_OPTIONS=--max-old-space-size=2048 pnpm --dir frontend run typecheck
 git diff --check
 ```
 
-在线升级与发布适配的本地预检（限制并发，不启动真实更新或下载产物）：
+以下命令检查在线升级与发布适配。
 
 ```sh
 GOMAXPROCS=1 GOMEMLIMIT=1GiB go -C backend test -p=1 -parallel=1 -tags=unit -count=1 \
@@ -114,7 +115,6 @@ bash deploy/tests/install-downstream-test.sh
 bash deploy/tests/install-github-token-test.sh
 ```
 
-新前端回归已接入 `make test-frontend-critical`，发布和安装脚本回归已接入 CI。
+在线升级前端回归已接入 `make test-frontend-critical`，发布和安装脚本回归已接入 CI。
 
-升级配置、数据库迁移及本次验证结果见
-[v0.2.23 二开集成说明](deploy/releases/v0.2.23-zy.1.md)。
+升级配置及本次验证结果见 [v0.2.25 二开集成说明](deploy/releases/v0.2.25-zy.1.md)。
