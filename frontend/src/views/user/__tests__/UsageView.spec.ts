@@ -221,7 +221,10 @@ describe('user UsageView', () => {
     const wrapper = mountUsageView()
     await flushPromises()
 
-    expect(wrapper.findComponent(UsageTable).props('columns').map((column: { key: string }) => column.key)).toContain('latency')
+    const columnKeys = wrapper.findComponent(UsageTable).props('columns').map((column: { key: string }) => column.key)
+    expect(columnKeys).toContain('latency')
+    expect(columnKeys[columnKeys.indexOf('billing_mode') + 1]).toBe('service_tier')
+    expect(columnKeys[columnKeys.length - 1]).toBe('ip_address')
     expect(query).toHaveBeenCalled()
     expect(getStats).toHaveBeenCalled()
     expect(getDashboardModels).toHaveBeenCalled()

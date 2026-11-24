@@ -634,6 +634,8 @@ type UsageLog struct {
 	ActualCost                float64 `json:"actual_cost"`
 	RateMultiplier            float64 `json:"rate_multiplier"`
 	LongContextBillingApplied bool    `json:"long_context_billing_applied"`
+	// Customer charge before the recorded Free Fast or Free Ultrafast waiver.
+	ActualCostBeforeDiscount *float64 `json:"actual_cost_before_discount,omitempty"`
 
 	BillingType  int8   `json:"billing_type"`
 	RequestType  string `json:"request_type"`

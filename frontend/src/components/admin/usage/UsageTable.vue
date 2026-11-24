@@ -145,6 +145,10 @@
           </span>
         </template>
 
+        <template #cell-service_tier="{ row }">
+          <UsageServiceTierBadge :tier="row.service_tier" :free="row.actual_cost_before_discount != null" />
+        </template>
+
         <template #cell-tokens="{ row }">
           <!-- 图片生成请求（仅按次计费时显示图片格式） -->
           <div v-if="isImageUsage(row)" class="flex items-center gap-1.5">
@@ -217,15 +221,22 @@
                 class="inline-flex items-center rounded px-1 py-px text-[10px] font-semibold leading-tight bg-amber-100 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:ring-amber-500/30"
               >{{ t('admin.usage.longContext') }}</span>
               <!-- Cost Detail Tooltip -->
-              <div
-                class="group relative"
-                @mouseenter="showTooltip($event, row)"
-                @mouseleave="hideTooltip"
+              <button
+                type="button"
+                class="group relative rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500"
+                :aria-label="t('usage.costDetails')"
+                :aria-describedby="tooltipData === row ? costTooltipId : undefined"
+                @pointerenter="$event.pointerType !== 'touch' && showTooltip($event, row)"
+                @pointerleave="$event.pointerType !== 'touch' && hideTooltip()"
+                @focus="showTooltip($event, row)"
+                @blur="hideTooltip"
+                @click="showTooltip($event, row)"
+                @keydown.esc.stop="hideTooltip"
               >
-                <div class="flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-100 transition-colors group-hover:bg-blue-100 dark:bg-gray-700 dark:group-hover:bg-blue-900/50">
+                <span class="flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-100 transition-colors group-hover:bg-blue-100 dark:bg-gray-700 dark:group-hover:bg-blue-900/50">
                   <Icon name="infoCircle" size="xs" class="text-gray-400 group-hover:text-blue-500 dark:text-gray-500 dark:group-hover:text-blue-400" />
-                </div>
-              </div>
+                </span>
+              </button>
             </div>
             <div v-if="showAccountBilling && row.account_rate_multiplier != null" class="mt-0.5 text-[11px] text-orange-500 dark:text-orange-400">
               A ${{ accountBilled(row).toFixed(6) }}
@@ -409,8 +420,11 @@
   <!-- Cost Tooltip Portal -->
   <Teleport to="body">
     <div
-      v-if="tooltipVisible"
-      class="fixed z-[9999] pointer-events-none -translate-y-1/2"
+      v-if="tooltipData"
+      :id="costTooltipId"
+      ref="costTooltip"
+      role="tooltip"
+      class="fixed z-[9999] pointer-events-none"
       :style="{
         left: tooltipPosition.x + 'px',
         top: tooltipPosition.y + 'px'
@@ -506,7 +520,7 @@
           <!-- Rate and Summary -->
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.serviceTier') }}</span>
-            <span class="font-semibold text-cyan-300">{{ getUsageServiceTierLabel(tooltipData?.service_tier, t) }}</span>
+            <UsageServiceTierBadge :tier="tooltipData.service_tier" :free="tooltipData.actual_cost_before_discount != null" on-dark-surface />
           </div>
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.rate') }}</span>
@@ -516,6 +530,7 @@
             <span class="text-gray-400">{{ t('usage.original') }}</span>
             <span class="font-medium text-white">${{ tooltipData?.total_cost?.toFixed(8) || '0.00000000' }}</span>
           </div>
+          <UsageServiceTierDiscount :usage="tooltipData" />
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.userBilled') }}</span>
             <span class="font-semibold text-green-400">${{ tooltipData?.actual_cost?.toFixed(8) || '0.00000000' }}</span>
@@ -538,20 +553,25 @@
             </div>
           </template>
         </div>
-        <div class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800"></div>
+        <div
+          v-if="tooltipPosition.arrow"
+          aria-hidden="true"
+          class="absolute h-0 w-0 -translate-y-1/2 border-y-[6px] border-y-transparent"
+          :class="tooltipPosition.arrow === 'left' ? 'right-full border-r-[6px] border-r-gray-900 dark:border-r-gray-800' : 'left-full border-l-[6px] border-l-gray-900 dark:border-l-gray-800'"
+          :style="{ top: tooltipPosition.arrowY + 'px' }"
+        ></div>
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, shallowRef, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { formatDateTime, formatReasoningEffort, reasoningEffortValuesEqual } from '@/utils/format'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
 import { formatTokenPricePerMillion } from '@/utils/usagePricing'
-import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
 import { resolveUsageRequestType } from '@/utils/usageRequestType'
 import {
   LATENCY_BAR_CLASSES,
@@ -595,6 +615,8 @@ function accountBilled(row: { total_cost?: number | null; account_stats_cost?: n
 import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import IpGeoCell from '@/components/common/IpGeoCell.vue'
+import UsageServiceTierBadge from './UsageServiceTierBadge.vue'
+import UsageServiceTierDiscount from './UsageServiceTierDiscount.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { fetchBatch, getEntry } from '@/utils/ipGeoLookup'
 import type { AdminUsageLog } from '@/types'
@@ -703,9 +725,10 @@ const copyUpstreamRequestId = (upstreamRequestId: string) =>
   copyIdentifier(upstreamRequestId, t('admin.usage.upstreamRequestIdCopied'))
 
 // Tooltip state - cost
-const tooltipVisible = ref(false)
-const tooltipPosition = ref({ x: 0, y: 0 })
-const tooltipData = ref<AdminUsageLog | null>(null)
+const costTooltipId = useId()
+const costTooltip = ref<HTMLElement | null>(null)
+const tooltipPosition = ref({ x: 0, y: 0, arrow: '', arrowY: 0 })
+const tooltipData = shallowRef<AdminUsageLog | null>(null)
 
 // Tooltip state - token
 const tokenTooltipVisible = ref(false)
@@ -749,17 +772,30 @@ const formatDuration = (ms: number | null | undefined): string => {
 }
 
 // Cost tooltip functions
-const showTooltip = (event: MouseEvent, row: AdminUsageLog) => {
+const showTooltip = async (event: Event, row: AdminUsageLog) => {
   const target = event.currentTarget as HTMLElement
   const rect = target.getBoundingClientRect()
   tooltipData.value = row
-  tooltipPosition.value.x = rect.right + 8
-  tooltipPosition.value.y = rect.top + rect.height / 2
-  tooltipVisible.value = true
+  await nextTick()
+  if (!costTooltip.value || tooltipData.value !== row) return
+
+  const { offsetWidth: width, offsetHeight: height } = costTooltip.value
+  const gap = 8
+  const right = rect.right + gap
+  const left = rect.left - gap - width
+  const maxX = window.innerWidth - width - gap
+  const arrow = right <= maxX ? 'left' : left >= gap ? 'right' : ''
+  const x = arrow === 'left' ? right : arrow === 'right' ? left : Math.max(gap, maxX)
+  const anchorY = rect.top + rect.height / 2
+  const maxY = window.innerHeight - height - gap
+  const below = rect.bottom + gap
+  const verticalFallback = below <= maxY ? below : rect.top - height - gap
+  const desiredY = arrow ? anchorY - height / 2 : verticalFallback
+  const y = Math.max(gap, Math.min(desiredY, maxY))
+  tooltipPosition.value = { x, y, arrow, arrowY: Math.max(gap, Math.min(anchorY - y, height - gap)) }
 }
 
 const hideTooltip = () => {
-  tooltipVisible.value = false
   tooltipData.value = null
 }
 

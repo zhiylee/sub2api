@@ -99,6 +99,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // billing_tier
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
+			nil,              // actual_cost_before_discount
 			sqlmock.AnyArg(), // upstream_request_id
 			sqlmock.AnyArg(), // session_id
 			log.NativeCompactionV2,
@@ -125,15 +126,17 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 
 	createdAt := time.Date(2025, 1, 2, 12, 0, 0, 0, time.UTC)
 	serviceTier := "priority"
+	beforeDiscount := 0.03
 	log := &service.UsageLog{
-		UserID:         1,
-		APIKeyID:       2,
-		AccountID:      3,
-		RequestID:      "req-service-tier",
-		Model:          "gpt-5.4",
-		RequestedModel: "gpt-5.4",
-		ServiceTier:    &serviceTier,
-		CreatedAt:      createdAt,
+		UserID:                   1,
+		APIKeyID:                 2,
+		AccountID:                3,
+		RequestID:                "req-service-tier",
+		Model:                    "gpt-5.4",
+		RequestedModel:           "gpt-5.4",
+		ServiceTier:              &serviceTier,
+		ActualCostBeforeDiscount: &beforeDiscount,
+		CreatedAt:                createdAt,
 	}
 
 	mock.ExpectQuery("INSERT INTO usage_logs").
@@ -196,6 +199,7 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // billing_tier
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
+			beforeDiscount,
 			sqlmock.AnyArg(), // upstream_request_id
 			sqlmock.AnyArg(), // session_id
 			log.NativeCompactionV2,
@@ -961,7 +965,8 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},
 			sql.NullString{},
 			sql.NullFloat64{},
-			sql.NullString{}, // upstream_request_id
+			sql.NullFloat64{}, // actual_cost_before_discount
+			sql.NullString{},  // upstream_request_id
 			sql.NullString{},
 			false, // native_compaction_v2
 			0,     // cache_creation_30m_tokens
@@ -979,6 +984,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 		require.NotNil(t, log.ImageSizeSource)
 		require.Equal(t, "output", *log.ImageSizeSource)
 		require.Equal(t, map[string]int{"4K": 2}, log.ImageSizeBreakdown)
+		require.Nil(t, log.ActualCostBeforeDiscount)
 	})
 
 	t.Run("request_type_ws_v2_overrides_legacy", func(t *testing.T) {
@@ -1043,16 +1049,19 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
-			sql.NullString{},  // upstream_request_id
-			sql.NullString{},  // session_id
-			false,             // native_compaction_v2
-			0,                 // cache_creation_30m_tokens
-			0,                 // cache_creation_12h_tokens
+			sql.NullFloat64{Float64: 0.03, Valid: true}, // actual_cost_before_discount
+			sql.NullString{}, // upstream_request_id
+			sql.NullString{}, // session_id
+			false,            // native_compaction_v2
+			0,                // cache_creation_30m_tokens
+			0,                // cache_creation_12h_tokens
 			now,
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
 		require.Equal(t, "priority", *log.ServiceTier)
+		require.NotNil(t, log.ActualCostBeforeDiscount)
+		require.Equal(t, 0.03, *log.ActualCostBeforeDiscount)
 		require.Equal(t, service.RequestTypeWSV2, log.RequestType)
 		require.True(t, log.Stream)
 		require.True(t, log.OpenAIWSMode)
@@ -1108,6 +1117,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			sql.NullFloat64{}, // actual_cost_before_discount
 			sql.NullString{},  // upstream_request_id
 			sql.NullString{},  // session_id
 			true,              // native_compaction_v2
@@ -1174,6 +1184,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			sql.NullFloat64{}, // actual_cost_before_discount
 			sql.NullString{},  // upstream_request_id
 			sql.NullString{},  // session_id
 			false,             // native_compaction_v2

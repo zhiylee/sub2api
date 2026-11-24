@@ -48,6 +48,9 @@ const messages: Record<string, string> = {
   'usage.serviceTierUltrafast': 'Ultrafast',
   'usage.serviceTierFlex': 'Flex',
   'usage.serviceTierStandard': 'Standard',
+  'usage.freeAcceleration': 'Acceleration fee waived',
+  'usage.beforeDiscountCharge': 'Before discount',
+  'usage.freeTierDiscount': 'Free {tier}',
   'usage.rate': 'Rate',
   'usage.accountMultiplier': 'Account rate',
   'usage.original': 'Original',
@@ -93,7 +96,10 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => localizedMessages[locale][key] ?? messages[key] ?? key,
+      t: (key: string, values?: { tier: string }) => {
+        const label = localizedMessages[locale][key] ?? messages[key] ?? key
+        return values?.tier ? label.replace('{tier}', values.tier) : label
+      },
     }),
   }
 })
@@ -106,6 +112,7 @@ const DataTableStub = {
         <slot name="cell-model" :row="row" :value="row.model" />
         <slot name="cell-reasoning_effort" :row="row" :value="row.reasoning_effort" />
         <slot name="cell-billing_mode" :row="row" />
+        <span data-service-tier><slot name="cell-service_tier" :row="row" /></span>
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-latency" :row="row" />
         <slot name="cell-cost" :row="row" />
@@ -143,6 +150,8 @@ const baseImageRow = {
   image_size_source: null,
   image_size_breakdown: null,
 }
+
+const costTooltipButton = 'button[aria-label="Cost Breakdown"]'
 
 describe('admin UsageTable tooltip', () => {
   it('shows the two OpenAI cache-write buckets without Anthropic lifetime labels', async () => {
@@ -298,8 +307,7 @@ describe('admin UsageTable tooltip', () => {
       props: { data: [{ ...baseImageRow, rate_multiplier: rate }], loading: false, columns: [] },
       global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
     })
-    const triggers = wrapper.findAll('.group.relative')
-    await triggers[triggers.length - 1].trigger('mouseenter')
+    await wrapper.get(costTooltipButton).trigger('pointerenter', { pointerType: 'mouse' })
     const rateLabel = wrapper.get('.fixed').findAll('span').find(span => span.text() === 'Rate')!
     expect(rateLabel.element.parentElement?.textContent).toContain(expected)
     wrapper.unmount()
@@ -337,8 +345,8 @@ describe('admin UsageTable tooltip', () => {
       },
     })
 
-    const tooltipTriggers = wrapper.findAll('.group.relative')
-    await tooltipTriggers[tooltipTriggers.length - 1].trigger('mouseenter')
+    const trigger = wrapper.get(costTooltipButton)
+    await trigger.trigger('pointerenter', { pointerType: 'mouse' })
     await nextTick()
 
     const text = wrapper.text()
@@ -353,6 +361,59 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('$5.0000 / 1M tokens')
     expect(text).toContain('$30.0000 / 1M tokens')
     expect(text).toContain('$0.069568')
+    expect(text).not.toContain('Free')
+    expect(text).not.toContain('Before discount')
+    await trigger.trigger('pointerleave', { pointerType: 'mouse' })
+    expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
+  })
+
+  it.each([
+    ['priority', 'Fast', 0.02024256, '−$0.01012128'],
+    ['ultrafast', 'Ultrafast', 0.03036384, '−$0.02024256'],
+  ])('shows the recorded offer for %s in the service tier cell and tooltip', async (tier, label, before, discount) => {
+    const row = {
+      ...baseImageRow,
+      service_tier: tier,
+      actual_cost: 0.01012128,
+      actual_cost_before_discount: before,
+    }
+    const wrapper = mount(UsageTable, {
+      props: { data: [row], columns: [] },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    const badge = wrapper.get('[data-service-tier]')
+    expect(badge.text()).toContain(label)
+    expect(badge.text()).toContain('Free')
+    expect(badge.get('.bg-clip-text').classes()).toContain(tier === 'priority' ? 'dark:from-cyan-300' : 'dark:from-violet-300')
+
+    const trigger = wrapper.get(costTooltipButton)
+    await trigger.trigger('focus')
+    const tooltip = wrapper.get('[role="tooltip"]')
+    expect(tooltip.text()).toContain('Free ' + label)
+    expect(tooltip.text()).toContain('Before discount$' + before.toFixed(8))
+    expect(tooltip.text()).toContain(discount)
+    expect(tooltip.text()).toContain('User billed$0.01012128')
+    await trigger.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('keeps the cost tooltip open after a tap generates mouseleave', async () => {
+    const wrapper = mount(UsageTable, {
+      props: { data: [baseImageRow], columns: [] },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    const trigger = wrapper.get(costTooltipButton)
+    await trigger.trigger('pointerenter', { pointerType: 'touch' })
+    expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
+
+    await trigger.trigger('click')
+    await trigger.trigger('mouseleave')
+    expect(wrapper.find('[role="tooltip"]').exists()).toBe(true)
+
+    await trigger.trigger('blur')
+    expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it.each(['token', 'image', 'per_request'])('keeps eight decimal places in %s cost details', async (billingMode) => {
@@ -375,8 +436,7 @@ describe('admin UsageTable tooltip', () => {
       props: { data: [row], loading: false, columns: [] },
       global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
     })
-    const triggers = wrapper.findAll('.group.relative')
-    await triggers[triggers.length - 1].trigger('mouseenter')
+    await wrapper.get(costTooltipButton).trigger('pointerenter', { pointerType: 'mouse' })
     const amounts = wrapper.get('.fixed').findAll('span').map(span => span.text())
     expect(amounts).toEqual(expect.arrayContaining([
       '$0.00000001', '$0.00000002', '$0.00000003', '$0.00000004',
@@ -395,8 +455,7 @@ describe('admin UsageTable tooltip', () => {
       },
       global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
     })
-    const triggers = wrapper.findAll('.group.relative')
-    await triggers[triggers.length - 1].trigger('mouseenter')
+    await wrapper.get(costTooltipButton).trigger('pointerenter', { pointerType: 'mouse' })
     const amounts = wrapper.get('.fixed').findAll('span').map(span => span.text()).filter(text => text.startsWith('$'))
     expect(amounts).toEqual(['$0.00000000', '$0.00000000', '$0.00000000', '$0.00000000'])
     wrapper.unmount()
@@ -629,7 +688,7 @@ describe('admin UsageTable tooltip', () => {
       },
     })
 
-    await wrapper.find('.group.relative').trigger('mouseenter')
+    await wrapper.get(costTooltipButton).trigger('pointerenter', { pointerType: 'mouse' })
     await nextTick()
 
     const text = wrapper.text()
@@ -673,7 +732,7 @@ describe('admin UsageTable tooltip', () => {
       },
     })
 
-    await wrapper.find('.group.relative').trigger('mouseenter')
+    await wrapper.get(costTooltipButton).trigger('pointerenter', { pointerType: 'mouse' })
     await nextTick()
 
     const text = wrapper.text()

@@ -5,6 +5,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -231,11 +232,14 @@ func TestOpenAIAccountFastMessagesChatFallback(t *testing.T) {
 
 func TestOpenAIAccountFastUsageBillsSelectedAccount(t *testing.T) {
 	for _, tt := range []struct {
-		name       string
-		tier       string
-		free       bool
-		shadow     bool
-		parentFree bool
+		name           string
+		tier           string
+		free           bool
+		shadow         bool
+		parentFree     bool
+		groupFree      bool
+		missingPricing bool
+		billingErr     error
 	}{
 		{name: "account free", tier: OpenAIFastTierPriority, free: true},
 		{name: "account paid", tier: OpenAIFastTierPriority},
@@ -245,18 +249,29 @@ func TestOpenAIAccountFastUsageBillsSelectedAccount(t *testing.T) {
 		{name: "ultrafast account paid", tier: OpenAIFastTierUltrafast},
 		{name: "ultrafast shadow free", tier: OpenAIFastTierUltrafast, free: true, shadow: true},
 		{name: "ultrafast shadow does not inherit parent", tier: OpenAIFastTierUltrafast, shadow: true, parentFree: true},
+		{name: "group free", tier: OpenAIFastTierPriority, groupFree: true},
+		{name: "group free with missing pricing", tier: OpenAIFastTierPriority, groupFree: true, missingPricing: true},
+		{name: "unsettled ultrafast", tier: OpenAIFastTierUltrafast, free: true, billingErr: errors.New("billing failed")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 			userRepo := &openAIRecordUsageUserRepoStub{}
 			svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, &openAIRecordUsageSubRepoStub{}, nil)
+			if tt.billingErr != nil {
+				svc.usageBillingRepo = &openAIRecordUsageBillingRepoStub{err: tt.billingErr}
+			}
 			svc.resolver = NewModelPricingResolver(nil, svc.billingService)
-			const model = "gpt-6-astra"
+			const pricedModel = "gpt-6-astra"
+			model := pricedModel
+			if tt.missingPricing {
+				model = "pricing-missing-test-model"
+			}
 			inputPrice, outputPrice, tierMultiplier := 0.001, 0.002, 3.0
 			groupID := int64(77)
 			apiKey := &APIKey{ID: 1020, GroupID: &groupID, Group: &Group{
 				ID: groupID, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true, RateMultiplier: 0.5,
-				ModelPricing: []ChannelModelPricing{{Models: []string{model}, BillingMode: BillingModeToken,
+				FreeOpenAIFast: tt.groupFree,
+				ModelPricing: []ChannelModelPricing{{Models: []string{pricedModel}, BillingMode: BillingModeToken,
 					InputPrice: &inputPrice, OutputPrice: &outputPrice, FastMultiplier: &tierMultiplier, UltrafastMultiplier: &tierMultiplier}},
 			}}
 			setting := OpenAIFreeFastExtraKey
@@ -278,14 +293,25 @@ func TestOpenAIAccountFastUsageBillsSelectedAccount(t *testing.T) {
 					UpstreamResponseServiceTier: "default", Usage: OpenAIUsage{InputTokens: 100, OutputTokens: 50}, Duration: time.Second},
 				APIKey: apiKey, User: &User{ID: 2020}, Account: account,
 			})
-			require.NoError(t, err)
+			require.ErrorIs(t, err, tt.billingErr)
 			require.NotNil(t, usageRepo.lastLog)
 			require.Equal(t, tt.tier, *usageRepo.lastLog.ServiceTier)
 			standardTotal := 100*inputPrice + 50*outputPrice
+			if tt.missingPricing {
+				standardTotal = 0
+			}
 			require.InDelta(t, standardTotal*tierMultiplier, usageRepo.lastLog.TotalCost, 1e-10)
-			wantCharge := standardTotal * 0.5
-			if !tt.free {
-				wantCharge *= tierMultiplier
+			wantCharge := standardTotal * tierMultiplier * 0.5
+			switch {
+			case tt.billingErr != nil:
+				require.Nil(t, usageRepo.lastLog.ActualCostBeforeDiscount)
+				wantCharge = 0
+			case (tt.free || tt.groupFree) && !tt.missingPricing:
+				require.NotNil(t, usageRepo.lastLog.ActualCostBeforeDiscount)
+				require.InDelta(t, wantCharge, *usageRepo.lastLog.ActualCostBeforeDiscount, 1e-10)
+				wantCharge = standardTotal * 0.5
+			default:
+				require.Nil(t, usageRepo.lastLog.ActualCostBeforeDiscount)
 			}
 			require.InDelta(t, wantCharge, usageRepo.lastLog.ActualCost, 1e-10)
 			require.InDelta(t, wantCharge, userRepo.lastAmount, 1e-10)
