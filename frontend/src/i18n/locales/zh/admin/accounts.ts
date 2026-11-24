@@ -782,7 +782,9 @@ export default {
         forceHint: '开启后，经过此账号的请求会强制使用 Fast；全局 Fast/Flex 策略仍可过滤或拦截。保存后新请求生效，已建立的 WebSocket 会话需重连。',
         free: '免费 Fast',
         freeHint: '此账号的 Fast 请求按 Standard 价格向客户扣费，上游仍使用 Fast。本开关不会主动开启 Fast。',
-        inheritHint: '账号与分组设置叠加：任一处开启即生效。关闭账号开关不会取消分组已开启的功能。'
+        inheritHint: '普通 Fast 的选项在账号或分组任一处开启即生效。',
+        freeUltrafast: '免费 Ultra Fast',
+        freeUltrafastHint: '此账号以 Ultra Fast 转发的请求按 Standard 价格向客户扣费。'
       },
       openai: {
         baseUrlHint: '留空使用官方 OpenAI API',

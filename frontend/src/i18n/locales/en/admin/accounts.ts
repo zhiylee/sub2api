@@ -654,7 +654,9 @@ export default {
         forceHint: 'Request Fast for traffic through this account. Global Fast/Flex policies can still filter or block it. Applies to new requests after saving; reconnect existing WebSocket sessions.',
         free: 'Free Fast',
         freeHint: 'Charge customers Standard prices for this account’s Fast requests while requesting Fast upstream. This setting does not enable Fast by itself.',
-        inheritHint: 'Account and group settings combine: either can enable a feature. Turning an account setting off does not disable the group setting.'
+        inheritHint: 'Either the account or the group can enable a regular Fast setting.',
+        freeUltrafast: 'Free Ultra Fast',
+        freeUltrafastHint: 'Charge customers Standard prices for requests this account forwards at Ultra Fast.'
       },
       openai: {
         baseUrlHint: 'Leave default for official OpenAI API',

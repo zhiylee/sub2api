@@ -149,6 +149,16 @@ func TestOpenAIAccountFastGroupSettingsStillApply(t *testing.T) {
 	require.False(t, billsOpenAIFastAtStandard(nil, account, "ultrafast"))
 }
 
+func TestOpenAIAccountFastUltrafastDiscountMatchesOnlyUltrafast(t *testing.T) {
+	account := &Account{Platform: PlatformOpenAI, Extra: map[string]any{OpenAIFreeUltrafastExtraKey: true}}
+	require.Empty(t, openAIRequestForcedServiceTier(context.Background(), account, "gpt-6-astra"))
+	require.True(t, billsOpenAIFastAtStandard(nil, account, OpenAIFastTierUltrafast))
+	for _, tier := range []string{"", "priority", "fast", "flex", "default"} {
+		require.False(t, billsOpenAIFastAtStandard(nil, account, tier))
+	}
+	require.False(t, billsOpenAIFastAtStandard(nil, &Account{Platform: PlatformGrok, Extra: account.Extra}, OpenAIFastTierUltrafast))
+}
+
 func TestOpenAIAccountFastRespectsGroupUltrafastEntitlements(t *testing.T) {
 	group := &Group{ID: 7, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true, ForceOpenAIUltrafast: true}
 	ctx := context.WithValue(context.Background(), ctxkey.Group, group)
@@ -222,52 +232,63 @@ func TestOpenAIAccountFastMessagesChatFallback(t *testing.T) {
 func TestOpenAIAccountFastUsageBillsSelectedAccount(t *testing.T) {
 	for _, tt := range []struct {
 		name       string
+		tier       string
 		free       bool
 		shadow     bool
 		parentFree bool
 	}{
-		{name: "account free", free: true},
-		{name: "account paid"},
-		{name: "shadow free", free: true, shadow: true},
-		{name: "shadow does not inherit parent", shadow: true, parentFree: true},
+		{name: "account free", tier: OpenAIFastTierPriority, free: true},
+		{name: "account paid", tier: OpenAIFastTierPriority},
+		{name: "shadow free", tier: OpenAIFastTierPriority, free: true, shadow: true},
+		{name: "shadow does not inherit parent", tier: OpenAIFastTierPriority, shadow: true, parentFree: true},
+		{name: "ultrafast account free", tier: OpenAIFastTierUltrafast, free: true},
+		{name: "ultrafast account paid", tier: OpenAIFastTierUltrafast},
+		{name: "ultrafast shadow free", tier: OpenAIFastTierUltrafast, free: true, shadow: true},
+		{name: "ultrafast shadow does not inherit parent", tier: OpenAIFastTierUltrafast, shadow: true, parentFree: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
-			svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+			userRepo := &openAIRecordUsageUserRepoStub{}
+			svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, &openAIRecordUsageSubRepoStub{}, nil)
 			svc.resolver = NewModelPricingResolver(nil, svc.billingService)
-			inputPrice, outputPrice, fastMultiplier := 0.001, 0.002, 3.0
+			const model = "gpt-6-astra"
+			inputPrice, outputPrice, tierMultiplier := 0.001, 0.002, 3.0
 			groupID := int64(77)
 			apiKey := &APIKey{ID: 1020, GroupID: &groupID, Group: &Group{
 				ID: groupID, Platform: PlatformOpenAI, Status: StatusActive, Hydrated: true, RateMultiplier: 0.5,
-				ModelPricing: []ChannelModelPricing{{Models: []string{"gpt-5.6-sol"}, BillingMode: BillingModeToken,
-					InputPrice: &inputPrice, OutputPrice: &outputPrice, FastMultiplier: &fastMultiplier}},
+				ModelPricing: []ChannelModelPricing{{Models: []string{model}, BillingMode: BillingModeToken,
+					InputPrice: &inputPrice, OutputPrice: &outputPrice, FastMultiplier: &tierMultiplier, UltrafastMultiplier: &tierMultiplier}},
 			}}
+			setting := OpenAIFreeFastExtraKey
+			if tt.tier == OpenAIFastTierUltrafast {
+				setting = OpenAIFreeUltrafastExtraKey
+			}
 			account := &Account{ID: 3020, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
-				Extra: map[string]any{OpenAIFreeFastExtraKey: tt.free}}
+				Extra: map[string]any{setting: tt.free}}
 			if tt.shadow {
 				parentID := int64(9001)
 				account.ParentAccountID = &parentID
 				svc.accountRepo = &openAIRecordUsageAccountRepoStub{account: &Account{
 					ID: parentID, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
-					Extra: map[string]any{OpenAIFreeFastExtraKey: tt.parentFree},
+					Extra: map[string]any{setting: tt.parentFree},
 				}}
 			}
-			tier := "priority"
 			err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
-				Result: &OpenAIForwardResult{RequestID: "resp_account_fast", Model: "gpt-5.6-sol", ServiceTier: &tier,
+				Result: &OpenAIForwardResult{RequestID: "resp_account_fast", Model: model, ServiceTier: &tt.tier,
 					UpstreamResponseServiceTier: "default", Usage: OpenAIUsage{InputTokens: 100, OutputTokens: 50}, Duration: time.Second},
 				APIKey: apiKey, User: &User{ID: 2020}, Account: account,
 			})
 			require.NoError(t, err)
 			require.NotNil(t, usageRepo.lastLog)
-			require.Equal(t, "priority", *usageRepo.lastLog.ServiceTier)
+			require.Equal(t, tt.tier, *usageRepo.lastLog.ServiceTier)
 			standardTotal := 100*inputPrice + 50*outputPrice
-			require.InDelta(t, standardTotal*fastMultiplier, usageRepo.lastLog.TotalCost, 1e-10)
+			require.InDelta(t, standardTotal*tierMultiplier, usageRepo.lastLog.TotalCost, 1e-10)
 			wantCharge := standardTotal * 0.5
 			if !tt.free {
-				wantCharge *= fastMultiplier
+				wantCharge *= tierMultiplier
 			}
 			require.InDelta(t, wantCharge, usageRepo.lastLog.ActualCost, 1e-10)
+			require.InDelta(t, wantCharge, userRepo.lastAmount, 1e-10)
 		})
 	}
 }
@@ -325,7 +346,7 @@ func TestOpenAIAccountFastUsagePreservesCacheWriteTTL(t *testing.T) {
 }
 
 func TestOpenAIAccountFastValidation(t *testing.T) {
-	for _, key := range []string{OpenAIForceFastExtraKey, OpenAIFreeFastExtraKey} {
+	for _, key := range []string{OpenAIForceFastExtraKey, OpenAIFreeFastExtraKey, OpenAIFreeUltrafastExtraKey} {
 		for _, value := range []any{nil, "true", 1, map[string]any{}} {
 			extra := map[string]any{key: value}
 			require.Error(t, ValidateOpenAIAccountFastExtra(extra))
@@ -349,11 +370,13 @@ func TestOpenAIAccountFastAdminUpdate(t *testing.T) {
 	ctx := context.Background()
 	for _, enabled := range []bool{true, false} {
 		updated, err := svc.UpdateAccount(ctx, 1, &UpdateAccountInput{Extra: map[string]any{
-			OpenAIForceFastExtraKey: enabled, OpenAIFreeFastExtraKey: enabled, "custom": "keep",
+			OpenAIForceFastExtraKey: enabled, OpenAIFreeFastExtraKey: enabled,
+			OpenAIFreeUltrafastExtraKey: enabled, "custom": "keep",
 		}})
 		require.NoError(t, err)
 		require.Equal(t, enabled, updated.Extra[OpenAIForceFastExtraKey])
 		require.Equal(t, enabled, updated.Extra[OpenAIFreeFastExtraKey])
+		require.Equal(t, enabled, updated.Extra[OpenAIFreeUltrafastExtraKey])
 		require.Equal(t, "keep", updated.Extra["custom"])
 	}
 	_, err := svc.UpdateAccount(ctx, 1, &UpdateAccountInput{Extra: map[string]any{OpenAIForceFastExtraKey: "true"}})
