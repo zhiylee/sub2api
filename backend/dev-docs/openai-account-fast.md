@@ -1,16 +1,18 @@
 # 账号级 OpenAI Fast
 
-在「账号管理 → 编辑账号 → OpenAI Fast 模式」设置两个独立开关：
+在「账号管理 → 编辑账号 → OpenAI Fast 模式」设置三个独立开关。
 
 - **强制使用 Fast（priority）**：选中该账号后，把请求档位写为 `priority`，然后继续执行全局 Fast/Flex 策略。
 - **免费 Fast**：对该账号最终以 `priority` 发出的请求，按相同请求的 Standard 价格向客户扣费。本开关不主动申请 Fast，也不免除上游费用。
+- **免费 Ultra Fast** 对该账号最终以 `ultrafast` 发出的请求按 Standard 价格向客户扣费。开关对使用此账号的所有分组生效，新加入分组的账号需要单独配置。
 
 配置存放在现有 `accounts.extra` 中，无需数据库迁移：
 
 ```json
 {
   "openai_force_fast": true,
-  "openai_free_fast": true
+  "openai_free_fast": true,
+  "openai_free_ultrafast": true
 }
 ```
 
@@ -20,7 +22,7 @@
 
 影子账号使用自身的 Fast 设置，不自动继承母账号。故障切换时按每次选中的账号计算，原始入站请求体保持可复用。
 
-免费 Fast 保留用量记录的 `service_tier=priority` 及 Fast 基准费用，只把客户实际扣费重算为 Standard；`flex`、`default`、`ultrafast` 等档位不适用。
+两个免费开关仅处理各自的档位。用量记录保留实际出站档位和对应的基准费用，`actual_cost` 记录按 Standard 重算的客户扣费。
 
 ## 同步上游时的检查点
 
@@ -32,7 +34,7 @@
 4. `openai_gateway_usage.go`：用实际选中的账号判断免费 Fast，继续复用原有 Standard 重算。
 5. `EditAccountModal.vue`：回填开关，并在提交末尾合并配置，避免其它 extra 构建逻辑覆盖。
 
-配置只在选号后读取；当前转发使用完整账号快照，复用普通账号编辑的刷新机制，无需扩展调度候选投影。若上游将判断提前到选号阶段，需同时检查精简投影是否保留这两个键。
+配置在选号后读取。当前转发使用完整账号快照，复用普通账号编辑的刷新机制。若上游将判断提前到选号阶段，需同时检查精简投影是否保留这些键。
 
 ## 验证
 

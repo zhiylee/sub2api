@@ -37,7 +37,7 @@ git log --format='%h %s' --grep='^Downstream-Patch: FAST-001$' v0.2.23..release/
 | --- | --- | --- | --- |
 | BILL-001 | OpenAI 按最终出站 `service_tier` 计费 | 保留。官方 API Key 路径仍允许响应档位降低计费 | `7d60fe775` |
 | BILL-002 | 分组逐模型 Token 倍率 | 官方支持逐模型定价和倍率优先级、且兼容存量配置后可退役 | `77b0f99d8` |
-| FAST-001 | 账号级强制 Fast / 免费 Fast | 保留。符合资格的分组 Ultra Fast 先于账号和分组的 Fast，最终档位继续经过全局策略 | `cfbd5910c` |
+| FAST-001 | 账号级强制 Fast / 免费 Fast / 免费 Ultra Fast | 保留。符合资格的分组 Ultra Fast 先于账号和分组的 Fast，最终档位继续经过全局策略 | `cfbd5910c` |
 | CTX-001 | Codex Desktop Page、浏览器上下文和 HTTP 桥接 | 复用官方 HTTP 格式与零拷贝预筛选，补齐 `browser_tabs` 和 WS 转 HTTP | `80e98e0fd` |
 | CI-001 | 固定版本 hotfix 镜像及产物版本验证 | 保留上下文、Fast 与缓存计费回归 | `e9f816b1e` |
 | TEST-001 | Fast、Ultra Fast 与缓存写入回归 | 随 FAST-001 迁移，覆盖账号档位优先级、GPT-6.2 套餐资格和 30m / 12h 用量 | `cfbd5910c` |
@@ -50,8 +50,8 @@ git log --format='%h %s' --grep='^Downstream-Patch: FAST-001$' v0.2.23..release/
 `backend/internal/pkg/codexcontext` 中的归一化。Page 的空 `call_id`、CRLF 分片头和单片
 快照沿用官方格式。二开的 `agent.browser_tabs` 要求无 `call_id` 且匹配 ambient envelope。
 
-Fast 配置继续存储在 `accounts.extra`，不增加数据库迁移。免费 Fast 复用新版的
-30m / 12h 用量桶，以同一份 token 和定价重算 Standard 客户扣费，保留 Fast 总费用和档位记录。
+Fast 配置存储在 `accounts.extra`。免费 Fast 和免费 Ultra Fast 复用 30m / 12h 用量桶，
+以同一份 token 和定价重算 Standard 客户扣费，保留实际档位和对应的总费用。
 账号设置、分组设置和全局策略的优先关系见
 [账号级 Fast 说明](backend/dev-docs/openai-account-fast.md)。
 

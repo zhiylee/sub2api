@@ -7,14 +7,15 @@ import (
 )
 
 const (
-	OpenAIForceFastExtraKey = "openai_force_fast"
-	OpenAIFreeFastExtraKey  = "openai_free_fast"
+	OpenAIForceFastExtraKey     = "openai_force_fast"
+	OpenAIFreeFastExtraKey      = "openai_free_fast"
+	OpenAIFreeUltrafastExtraKey = "openai_free_ultrafast"
 )
 
 // ValidateOpenAIAccountFastExtra validates explicitly supplied account settings.
 // Missing keys keep existing behavior; only OpenAI accounts consume these flags.
 func ValidateOpenAIAccountFastExtra(extra map[string]any) error {
-	for _, key := range []string{OpenAIForceFastExtraKey, OpenAIFreeFastExtraKey} {
+	for _, key := range []string{OpenAIForceFastExtraKey, OpenAIFreeFastExtraKey, OpenAIFreeUltrafastExtraKey} {
 		if value, exists := extra[key]; exists {
 			if _, ok := value.(bool); !ok {
 				return infraerrors.BadRequest("OPENAI_ACCOUNT_FAST_INVALID", key+" must be a boolean")
@@ -45,13 +46,14 @@ func openAIRequestForcedServiceTier(ctx context.Context, account *Account, model
 	return ""
 }
 
-// Free Fast only changes the customer charge for priority requests. Use the
-// selected account, including shadows, rather than its credential-bearing parent.
+// Use the selected account so shadow accounts can set their own billing policy.
 func billsOpenAIFastAtStandard(apiKey *APIKey, account *Account, serviceTier string) bool {
 	switch normalizeBillingServiceTier(serviceTier) {
 	case "priority", "fast":
 		return accountOpenAIFastEnabled(account, OpenAIFreeFastExtraKey) ||
 			groupBillsOpenAIFastAtStandard(apiKey, account, serviceTier)
+	case OpenAIFastTierUltrafast:
+		return accountOpenAIFastEnabled(account, OpenAIFreeUltrafastExtraKey)
 	default:
 		return false
 	}

@@ -4,6 +4,7 @@ import Toggle from '@/components/common/Toggle.vue'
 
 const force = defineModel<boolean>('force', { default: false })
 const free = defineModel<boolean>('free', { default: false })
+const freeUltrafast = defineModel<boolean>('freeUltrafast', { default: false })
 const { t } = useI18n()
 </script>
 
@@ -33,5 +34,16 @@ const { t } = useI18n()
       />
     </div>
     <p class="input-hint">{{ t('admin.accounts.openaiFast.inheritHint') }}</p>
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <label class="input-label mb-0">{{ t('admin.accounts.openaiFast.freeUltrafast') }}</label>
+        <p class="input-hint">{{ t('admin.accounts.openaiFast.freeUltrafastHint') }}</p>
+      </div>
+      <Toggle
+        v-model="freeUltrafast"
+        data-testid="openai-account-free-ultrafast-toggle"
+        :aria-label="t('admin.accounts.openaiFast.freeUltrafast')"
+      />
+    </div>
   </div>
 </template>
