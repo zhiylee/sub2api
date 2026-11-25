@@ -783,6 +783,8 @@ export default {
         free: '免费 Fast',
         freeHint: '此账号的 Fast 请求按 Standard 价格向客户扣费，上游仍使用 Fast。本开关不会主动开启 Fast。',
         inheritHint: '普通 Fast 的选项在账号或分组任一处开启即生效。',
+        forceUltrafast: '强制使用 Ultra Fast（ultrafast）',
+        forceUltrafastHint: '此账号的请求在模型和账号符合条件时优先使用 Ultra Fast，否则沿用强制 Fast 或客户端档位。最终档位受全局 Fast/Flex 策略控制。',
         freeUltrafast: '免费 Ultra Fast',
         freeUltrafastHint: '此账号以 Ultra Fast 转发的请求按 Standard 价格向客户扣费。'
       },

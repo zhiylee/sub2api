@@ -1,9 +1,10 @@
 # 账号级 OpenAI Fast
 
-在「账号管理 → 编辑账号 → OpenAI Fast 模式」设置三个独立开关。
+在「账号管理 → 编辑 OpenAI 账号 → OpenAI Fast 模式」设置四个独立开关。
 
 - **强制使用 Fast（priority）**：选中该账号后，把请求档位写为 `priority`，然后继续执行全局 Fast/Flex 策略。
 - **免费 Fast**：对该账号最终以 `priority` 发出的请求，按相同请求的 Standard 价格向客户扣费。本开关不主动申请 Fast，也不免除上游费用。
+- **强制使用 Ultra Fast（ultrafast）** 在上游模型和账号符合资格时，把请求档位写为 `ultrafast`，然后执行全局 Fast/Flex 策略。
 - **免费 Ultra Fast** 对该账号最终以 `ultrafast` 发出的请求按 Standard 价格向客户扣费。开关对使用此账号的所有分组生效，新加入分组的账号需要单独配置。
 
 配置存放在现有 `accounts.extra` 中，无需数据库迁移：
@@ -12,11 +13,12 @@
 {
   "openai_force_fast": true,
   "openai_free_fast": true,
+  "openai_force_ultrafast": true,
   "openai_free_ultrafast": true
 }
 ```
 
-未配置时均为关闭。账号和分组的 Fast 任一处开启即生效。分组的强制 Ultra Fast 在模型及账号符合上游资格时优先，其余请求按 Fast 设置或客户端档位处理。全局策略继续作用于最终选出的档位。
+未配置时均为关闭。账号或分组任一处开启强制 Ultra Fast 时，符合资格的请求优先使用 `ultrafast`。其余请求在账号或分组开启强制 Fast 时使用 `priority`，否则沿用客户端档位。最终档位继续经过全局策略。账号可同时开启强制使用和免费 Ultra Fast。
 
 配置仅对 OpenAI 账号生效，覆盖 OAuth、Setup Token 和 API Key 文本转发，包括 Responses、Chat Completions、Messages 转换与 WebSocket 的 `response.create`。图片、视频等独立端点不额外注入此参数。已有 WebSocket 会话需要重连。
 
@@ -29,7 +31,7 @@
 账号配置读取、校验及组合判断集中在 `backend/internal/service/openai_account_fast.go`，界面集中在 `frontend/src/components/account/OpenAIAccountFastSettings.vue`。其余接入点为：
 
 1. `admin_account.go`：创建、编辑和 extra 更新入口的布尔值校验。
-2. `openai_gateway_request_body.go`、`openai_gateway_forward.go` 使用组合后的强制档位判断，复用官方 Ultra Fast 资格检查。
+2. `openai_gateway_request_body.go`、`openai_gateway_forward.go` 使用组合后的强制档位判断。账号和分组共用从官方分组选档提取的 Ultra Fast 资格检查。
 3. `openai_gateway_messages_chat_fallback.go`：转换为 Chat Completions 后应用策略，并从最终出站报文提取档位。
 4. `openai_gateway_usage.go`：用实际选中的账号判断免费 Fast，继续复用原有 Standard 重算。
 5. `EditAccountModal.vue`：回填开关，并在提交末尾合并配置，避免其它 extra 构建逻辑覆盖。

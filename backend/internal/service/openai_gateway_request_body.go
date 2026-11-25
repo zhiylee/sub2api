@@ -2264,8 +2264,8 @@ func openAIFastPolicySettingsFromContext(ctx context.Context) *OpenAIFastPolicyS
 }
 
 // openAIModelSupportsUltrafast reports whether OpenAI offers the Ultrafast
-// service tier for the model. It is the single
-// source for both the group-forced tier gate and the Ultrafast billing
+// service tier for the model. It is the single source for both the forced
+// tier gate and the Ultrafast billing
 // multiplier, so a model can never be forced onto Ultrafast yet billed below it.
 func openAIModelSupportsUltrafast(model string) bool {
 	normalized := normalizeKnownOpenAICodexModel(model)
@@ -2277,8 +2277,7 @@ func openAIModelSupportsUltrafast(model string) bool {
 // "" when the group forces nothing and the client's value is kept.
 //
 // The two group flags are independent and resolve as Ultrafast > Fast > client:
-//   - ForceOpenAIUltrafast applies only to models that support Ultrafast
-//     (openAIModelSupportsUltrafast) and yields "ultrafast".
+//   - ForceOpenAIUltrafast yields "ultrafast" for eligible models and accounts.
 //   - Otherwise ForceOpenAIFast yields "priority", for every model.
 //
 // So a group with only ForceOpenAIUltrafast leaves unsupported models to the
@@ -2291,19 +2290,8 @@ func openAIGroupForcedServiceTier(ctx context.Context, account *Account, model s
 	if !IsGroupContextValid(group) || !groupSupportsOpenAIFast(group.Platform) {
 		return ""
 	}
-	if group.ForceOpenAIUltrafast && openAIModelSupportsUltrafast(model) {
-		// Resolve the published Pro entitlement first, then account-specific grants.
-		if base := openai.GPT62ModelID(model); base != "" && account.IsOpenAIOAuthLike() {
-			if gpt62PlanIncludesUltrafast(account, base) {
-				return OpenAIFastTierUltrafast
-			}
-			metadata, ok := account.GetUpstreamModelMetadata(base)
-			if ok && gjson.GetBytes(metadata.CodexToolCapabilities["service_tiers"], `#(id=="ultrafast")`).Exists() {
-				return OpenAIFastTierUltrafast
-			}
-		} else {
-			return OpenAIFastTierUltrafast
-		}
+	if group.ForceOpenAIUltrafast && openAIAccountSupportsUltrafast(account, model) {
+		return OpenAIFastTierUltrafast
 	}
 	if group.ForceOpenAIFast {
 		return OpenAIFastTierPriority
@@ -2316,8 +2304,8 @@ func openAIGroupForcedServiceTier(ctx context.Context, account *Account, model s
 // action=block it returns (body, *OpenAIFastBlockedError). On pass it
 // normalizes the service_tier value (e.g. client alias "fast" → "priority").
 // action=force_priority rewrites any matched known tier to "priority". Before
-// the global policy is evaluated, a trusted group's eligible Ultrafast tier
-// takes precedence over account or group force Fast (see openAIRequestForcedServiceTier).
+// the global policy is evaluated, eligible account or group Ultrafast takes
+// precedence over account or group Fast (see openAIRequestForcedServiceTier).
 // The global policy remains authoritative and may still pass, filter, or block
 // that final value.
 //
@@ -2417,8 +2405,8 @@ func writeOpenAIFastPolicyBlockedResponse(c *gin.Context, err *OpenAIFastBlocked
 //   - filter: returns a copy with top-level service_tier removed
 //   - force_priority: keeps service_tier and rewrites it to "priority"
 //   - block: returns (frame, *OpenAIFastBlockedError)
-//   - Forced tiers: sets eligible group Ultrafast or account/group Fast, then
-//     applies the global rule
+//   - Forced tiers use the same account and group precedence as HTTP before
+//     applying the global rule
 //
 // Only frames whose "type" field strictly equals "response.create" are
 // inspected/mutated. Any other frame type — including the empty string —

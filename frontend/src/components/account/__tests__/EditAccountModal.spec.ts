@@ -407,12 +407,15 @@ describe('EditAccountModal', () => {
     const wrapper = mountModal(account)
     const force = wrapper.get('[data-testid="openai-account-force-fast-toggle"]')
     const free = wrapper.get('[data-testid="openai-account-free-fast-toggle"]')
+    const forceUltrafast = wrapper.get('[data-testid="openai-account-force-ultrafast-toggle"]')
     const freeUltrafast = wrapper.get('[data-testid="openai-account-free-ultrafast-toggle"]')
     expect(force.attributes('aria-checked')).toBe('false')
     expect(free.attributes('aria-checked')).toBe('false')
+    expect(forceUltrafast.attributes('aria-checked')).toBe('false')
     expect(freeUltrafast.attributes('aria-checked')).toBe('false')
 
     await free.trigger('click')
+    await forceUltrafast.trigger('click')
     expect(freeUltrafast.attributes('aria-checked')).toBe('false')
     await freeUltrafast.trigger('click')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
@@ -422,40 +425,49 @@ describe('EditAccountModal', () => {
       openai_passthrough: true,
       openai_force_fast: false,
       openai_free_fast: true,
+      openai_force_ultrafast: true,
       openai_free_ultrafast: true
     })
     expect(account.extra).not.toHaveProperty('openai_free_fast')
+    expect(account.extra).not.toHaveProperty('openai_force_ultrafast')
     expect(account.extra).not.toHaveProperty('openai_free_ultrafast')
     wrapper.unmount()
   })
 
   it('loads and disables saved Fast settings, then resets them when editing another account', async () => {
     const account = buildAccount()
-    account.extra = { openai_force_fast: true, openai_free_fast: true, openai_free_ultrafast: true, quota_limit: 50 }
+    account.extra = {
+      openai_force_fast: true, openai_free_fast: true, openai_force_ultrafast: true, openai_free_ultrafast: true, quota_limit: 50
+    }
     updateAccountMock.mockReset().mockResolvedValue(account)
     checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
     const wrapper = mountModal(account)
     const force = wrapper.get('[data-testid="openai-account-force-fast-toggle"]')
     const free = wrapper.get('[data-testid="openai-account-free-fast-toggle"]')
+    const forceUltrafast = wrapper.get('[data-testid="openai-account-force-ultrafast-toggle"]')
     const freeUltrafast = wrapper.get('[data-testid="openai-account-free-ultrafast-toggle"]')
     expect(force.attributes('aria-checked')).toBe('true')
     expect(free.attributes('aria-checked')).toBe('true')
+    expect(forceUltrafast.attributes('aria-checked')).toBe('true')
     expect(freeUltrafast.attributes('aria-checked')).toBe('true')
     await force.trigger('click')
     await free.trigger('click')
+    await forceUltrafast.trigger('click')
     await freeUltrafast.trigger('click')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toMatchObject({
-      openai_force_fast: false, openai_free_fast: false, openai_free_ultrafast: false, quota_limit: 50
+      openai_force_fast: false, openai_free_fast: false, openai_force_ultrafast: false, openai_free_ultrafast: false, quota_limit: 50
     })
 
     await wrapper.setProps({ account: { ...account, id: 2, extra: { openai_force_fast: true, openai_free_ultrafast: true } } })
     expect(force.attributes('aria-checked')).toBe('true')
     expect(free.attributes('aria-checked')).toBe('false')
+    expect(forceUltrafast.attributes('aria-checked')).toBe('false')
     expect(freeUltrafast.attributes('aria-checked')).toBe('true')
     await wrapper.setProps({ account: { ...account, id: 3, extra: {} } })
     expect(force.attributes('aria-checked')).toBe('false')
     expect(free.attributes('aria-checked')).toBe('false')
+    expect(forceUltrafast.attributes('aria-checked')).toBe('false')
     expect(freeUltrafast.attributes('aria-checked')).toBe('false')
     wrapper.unmount()
   })
@@ -464,6 +476,7 @@ describe('EditAccountModal', () => {
     const wrapper = mountModal(buildVertexAccount())
     expect(wrapper.find('[data-testid="openai-account-force-fast-toggle"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="openai-account-free-fast-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="openai-account-force-ultrafast-toggle"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="openai-account-free-ultrafast-toggle"]').exists()).toBe(false)
     wrapper.unmount()
   })

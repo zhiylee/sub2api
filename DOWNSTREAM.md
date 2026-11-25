@@ -13,7 +13,7 @@
 ## 当前基线
 
 - 官方正式版为 `v0.2.25`，提交为 `348997267d756eab5729bb6b78a275a15d18796a`，包含 `v0.2.24`。 [官方 Release](https://github.com/Wei-Shaw/sub2api/releases/tag/v0.2.25)
-- 集成分支为 `release/0.2.25`，版本为 `0.2.25-zy.1`，计划发布 tag 为 `v0.2.25-zy.1`。
+- 集成分支为 `release/0.2.25`，当前二开版本为 `0.2.25-zy.2`，发布 tag 为 `v0.2.25-zy.2`。
 - 二开来源为 `release/0.2.23` 的 `32339fac5`，包含 `v0.2.23-zy.2` 和之后的账号免费 Ultra Fast。
 
 ## 提交组织
@@ -36,7 +36,7 @@ git log --format='%h %s' --grep='^Downstream-Patch: FAST-001$' v0.2.25..release/
 | --- | --- | --- | --- |
 | BILL-001 | OpenAI 按最终出站 `service_tier` 计费 | 保留。响应档位作为诊断信息 | `9f1bf652b` |
 | BILL-002 | 分组逐模型 Token 倍率 | 保留倍率优先级及已有配置，兼容官方模型广场的复制模型 ID | `77b0f99d8` |
-| FAST-001 | 账号级强制 Fast / 免费 Fast / 免费 Ultra Fast | 保留。符合资格的分组 Ultra Fast 优先，最终档位继续经过全局策略 | `feb359369`、`32339fac5` |
+| FAST-001 | 账号级强制与免费 Fast / Ultra Fast | 保留。账号与分组共用 Ultra Fast 资格判断，符合资格的强制 Ultra Fast 优先，最终档位继续经过全局策略 | `feb359369`、`32339fac5` |
 | CTX-001 | Codex Desktop Page、浏览器上下文和 HTTP 桥接 | 将官方新增的上下文类型并入 HTTP 与 WS 转 HTTP 的共享处理，保留 `browser_tabs` | `c248ee9fc` |
 | CI-001 | 固定版本 hotfix 镜像及产物版本验证 | 保留上下文、Fast 与缓存计费回归 | `afdea1301`、`1cd7a12ac` |
 | TEST-001 | Fast、Ultra Fast 与缓存写入回归 | 随 FAST-001 迁移，覆盖账号档位优先级、GPT-6.2 套餐资格和 30m / 12h 用量 | `feb359369`、`32339fac5` |
@@ -117,4 +117,4 @@ bash deploy/tests/install-github-token-test.sh
 
 在线升级前端回归已接入 `make test-frontend-critical`，发布和安装脚本回归已接入 CI。
 
-升级配置及本次验证结果见 [v0.2.25 二开集成说明](deploy/releases/v0.2.25-zy.1.md)。
+升级配置及验证结果见 [v0.2.25-zy.1 集成说明](deploy/releases/v0.2.25-zy.1.md)和 [v0.2.25-zy.2 发布说明](deploy/releases/v0.2.25-zy.2.md)。

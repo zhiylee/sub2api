@@ -2033,6 +2033,7 @@
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
         v-model:force="openAIForceFast"
         v-model:free="openAIFreeFast"
+        v-model:force-ultrafast="openAIForceUltrafast"
         v-model:free-ultrafast="openAIFreeUltrafast"
       />
 
@@ -4208,6 +4209,7 @@ const openaiPassthroughEnabled = ref(false)
 const openaiPassthroughModelFilterEnabled = ref(false)
 const openAIForceFast = ref(false)
 const openAIFreeFast = ref(false)
+const openAIForceUltrafast = ref(false)
 const openAIFreeUltrafast = ref(false)
 // OpenAI Codex namespace 工具摊平兼容开关（仅 OAuth），缺省关闭即原样保留
 const openaiFlattenNamespacesEnabled = ref(false)
@@ -4714,6 +4716,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	const extra = newAccount.extra as Record<string, unknown> | undefined
 	openAIForceFast.value = newAccount.platform === 'openai' && extra?.openai_force_fast === true
 	openAIFreeFast.value = newAccount.platform === 'openai' && extra?.openai_free_fast === true
+	openAIForceUltrafast.value = newAccount.platform === 'openai' && extra?.openai_force_ultrafast === true
 	openAIFreeUltrafast.value = newAccount.platform === 'openai' && extra?.openai_free_ultrafast === true
 	mixedScheduling.value = extra?.mixed_scheduling === true
 	allowOverages.value = extra?.allow_overages === true
@@ -6505,6 +6508,7 @@ const handleSubmit = async () => {
         ...((updatePayload.extra as Record<string, unknown>) || props.account.extra || {}),
         openai_force_fast: openAIForceFast.value,
         openai_free_fast: openAIFreeFast.value,
+        openai_force_ultrafast: openAIForceUltrafast.value,
         openai_free_ultrafast: openAIFreeUltrafast.value
       }
     }

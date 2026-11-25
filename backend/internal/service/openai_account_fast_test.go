@@ -79,10 +79,14 @@ func TestOpenAIAccountFastPolicyHTTPAndWS(t *testing.T) {
 func TestOpenAIAccountFastForwardAttemptsKeepClientBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	// Reuse the same ingress body as the handler does on account failover.
-	body := []byte(`{"model":"gpt-5.6-sol","stream":true,"input":"hi"}`)
+	body := []byte(`{"model":"gpt-6.1-sol","stream":true,"input":"hi"}`)
 	original := bytes.Clone(body)
 	for _, passthrough := range []bool{false, true} {
-		for _, force := range []bool{true, false} {
+		for _, tc := range []struct{ key, tier string }{
+			{OpenAIForceFastExtraKey, OpenAIFastTierPriority},
+			{OpenAIForceUltrafastExtraKey, OpenAIFastTierUltrafast},
+			{},
+		} {
 			svc := newOpenAIGatewayServiceWithSettings(t, DefaultOpenAIFastPolicySettings())
 			svc.cfg = &config.Config{}
 			upstream := &httpUpstreamRecorder{resp: &http.Response{
@@ -94,9 +98,12 @@ func TestOpenAIAccountFastForwardAttemptsKeepClientBody(t *testing.T) {
 			account := &Account{
 				ID: 123, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1,
 				Credentials: map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
-				Extra: map[string]any{"openai_passthrough": passthrough, OpenAIForceFastExtraKey: force,
+				Extra: map[string]any{"openai_passthrough": passthrough,
 					"openai_oauth_responses_websockets_v2_mode": OpenAIWSIngressModeOff},
 				Status: StatusActive, Schedulable: true, RateMultiplier: f64p(1),
+			}
+			if tc.key != "" {
+				account.Extra[tc.key] = true
 			}
 			rec := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(rec)
@@ -105,12 +112,13 @@ func TestOpenAIAccountFastForwardAttemptsKeepClientBody(t *testing.T) {
 			result, err := svc.Forward(context.Background(), c, account, body)
 			require.NoError(t, err)
 			require.NotNil(t, result)
-			require.Equal(t, force, gjson.GetBytes(upstream.lastBody, "service_tier").Exists())
-			if force {
-				require.NotNil(t, result.ServiceTier)
-				require.Equal(t, "priority", *result.ServiceTier)
-			} else {
+			if tc.tier == "" {
+				require.False(t, gjson.GetBytes(upstream.lastBody, "service_tier").Exists())
 				require.Nil(t, result.ServiceTier)
+			} else {
+				require.Equal(t, tc.tier, gjson.GetBytes(upstream.lastBody, "service_tier").String())
+				require.NotNil(t, result.ServiceTier)
+				require.Equal(t, tc.tier, *result.ServiceTier)
 			}
 			require.Equal(t, original, body, "account-specific rewrites must not mutate ingress bytes")
 		}
@@ -188,6 +196,59 @@ func TestOpenAIAccountFastRespectsGroupUltrafastEntitlements(t *testing.T) {
 			require.Equal(t, tc.want, gjson.GetBytes(httpBody, "service_tier").String())
 			require.Equal(t, tc.want, gjson.GetBytes(wsFrame, "service_tier").String())
 			require.Equal(t, tc.want == OpenAIFastTierPriority, billsOpenAIFastAtStandard(nil, account, tc.want))
+		})
+	}
+}
+
+func TestOpenAIAccountFastForceUltrafastHTTPAndWS(t *testing.T) {
+	ctx := context.Background()
+	groupFastCtx := context.WithValue(ctx, ctxkey.Group, &Group{
+		ID: 7, Platform: PlatformComposite, Status: StatusActive, Hydrated: true, ForceOpenAIFast: true,
+	})
+	for _, tc := range []struct {
+		name     string
+		model    string
+		platform string
+		ctx      context.Context
+		fast     bool
+		action   string
+		want     string
+	}{
+		{name: "overrides account Fast", model: "gpt-6.2-sol-max", platform: PlatformOpenAI, ctx: ctx, fast: true, want: OpenAIFastTierUltrafast},
+		{name: "overrides group Fast", model: "gpt-6.2-sol", platform: PlatformOpenAI, ctx: groupFastCtx, want: OpenAIFastTierUltrafast},
+		{name: "ineligible plan follows client", model: "gpt-6.2-astra", platform: PlatformOpenAI, ctx: ctx, want: OpenAIFastTierFlex},
+		{name: "ineligible plan falls back to Fast", model: "gpt-6.2-astra", platform: PlatformOpenAI, ctx: ctx, fast: true, want: OpenAIFastTierPriority},
+		{name: "unsupported model follows client", model: "gpt-5.6-sol", platform: PlatformOpenAI, ctx: ctx, want: OpenAIFastTierFlex},
+		{name: "other platform follows client", model: "gpt-6.1-sol", platform: PlatformGrok, ctx: ctx, want: OpenAIFastTierFlex},
+		{name: "global policy filters Ultra Fast", model: "gpt-6.1-sol", platform: PlatformOpenAI, ctx: ctx, action: BetaPolicyActionFilter},
+		{name: "global policy rewrites Ultra Fast", model: "gpt-6.1-sol", platform: PlatformOpenAI, ctx: ctx, action: OpenAIFastPolicyActionForcePriority, want: OpenAIFastTierPriority},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			settings := DefaultOpenAIFastPolicySettings()
+			if tc.action != "" {
+				settings.Rules = []OpenAIFastPolicyRule{{
+					ServiceTier: OpenAIFastTierUltrafast, Scope: BetaPolicyScopeAll, Action: tc.action,
+				}}
+			}
+			svc := newOpenAIGatewayServiceWithSettings(t, settings)
+			account := &Account{
+				Platform:    tc.platform,
+				Type:        AccountTypeOAuth,
+				Credentials: map[string]any{"plan_type": "pro"},
+				Extra:       map[string]any{OpenAIForceUltrafastExtraKey: true, OpenAIForceFastExtraKey: tc.fast},
+			}
+			body := []byte(`{"type":"response.create","model":"` + tc.model + `","service_tier":"flex"}`)
+			httpBody, err := svc.applyOpenAIFastPolicyToBody(tc.ctx, account, tc.model, body)
+			require.NoError(t, err)
+			wsFrame, blocked, err := svc.applyOpenAIFastPolicyToWSResponseCreate(tc.ctx, account, tc.model, body)
+			require.NoError(t, err)
+			require.Nil(t, blocked)
+			for _, payload := range [][]byte{httpBody, wsFrame} {
+				tier := gjson.GetBytes(payload, "service_tier")
+				require.Equal(t, tc.want != "", tier.Exists())
+				require.Equal(t, tc.want, tier.String())
+			}
+			require.False(t, billsOpenAIFastAtStandard(nil, account, tc.want))
 		})
 	}
 }
@@ -372,7 +433,7 @@ func TestOpenAIAccountFastUsagePreservesCacheWriteTTL(t *testing.T) {
 }
 
 func TestOpenAIAccountFastValidation(t *testing.T) {
-	for _, key := range []string{OpenAIForceFastExtraKey, OpenAIFreeFastExtraKey, OpenAIFreeUltrafastExtraKey} {
+	for _, key := range []string{OpenAIForceFastExtraKey, OpenAIFreeFastExtraKey, OpenAIForceUltrafastExtraKey, OpenAIFreeUltrafastExtraKey} {
 		for _, value := range []any{nil, "true", 1, map[string]any{}} {
 			extra := map[string]any{key: value}
 			require.Error(t, ValidateOpenAIAccountFastExtra(extra))
@@ -397,15 +458,18 @@ func TestOpenAIAccountFastAdminUpdate(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		updated, err := svc.UpdateAccount(ctx, 1, &UpdateAccountInput{Extra: map[string]any{
 			OpenAIForceFastExtraKey: enabled, OpenAIFreeFastExtraKey: enabled,
-			OpenAIFreeUltrafastExtraKey: enabled, "custom": "keep",
+			OpenAIForceUltrafastExtraKey: enabled, OpenAIFreeUltrafastExtraKey: enabled, "custom": "keep",
 		}})
 		require.NoError(t, err)
 		require.Equal(t, enabled, updated.Extra[OpenAIForceFastExtraKey])
 		require.Equal(t, enabled, updated.Extra[OpenAIFreeFastExtraKey])
+		require.Equal(t, enabled, updated.Extra[OpenAIForceUltrafastExtraKey])
 		require.Equal(t, enabled, updated.Extra[OpenAIFreeUltrafastExtraKey])
 		require.Equal(t, "keep", updated.Extra["custom"])
 	}
-	_, err := svc.UpdateAccount(ctx, 1, &UpdateAccountInput{Extra: map[string]any{OpenAIForceFastExtraKey: "true"}})
-	require.Error(t, err)
-	require.Equal(t, false, repo.accounts[1].Extra[OpenAIForceFastExtraKey])
+	for _, key := range []string{OpenAIForceFastExtraKey, OpenAIForceUltrafastExtraKey} {
+		_, err := svc.UpdateAccount(ctx, 1, &UpdateAccountInput{Extra: map[string]any{key: "true"}})
+		require.Error(t, err)
+		require.Equal(t, false, repo.accounts[1].Extra[key])
+	}
 }

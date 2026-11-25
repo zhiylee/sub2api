@@ -4,18 +4,21 @@ import (
 	"context"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/tidwall/gjson"
 )
 
 const (
-	OpenAIForceFastExtraKey     = "openai_force_fast"
-	OpenAIFreeFastExtraKey      = "openai_free_fast"
-	OpenAIFreeUltrafastExtraKey = "openai_free_ultrafast"
+	OpenAIForceFastExtraKey      = "openai_force_fast"
+	OpenAIFreeFastExtraKey       = "openai_free_fast"
+	OpenAIForceUltrafastExtraKey = "openai_force_ultrafast"
+	OpenAIFreeUltrafastExtraKey  = "openai_free_ultrafast"
 )
 
 // ValidateOpenAIAccountFastExtra validates explicitly supplied account settings.
 // Missing keys keep existing behavior; only OpenAI accounts consume these flags.
 func ValidateOpenAIAccountFastExtra(extra map[string]any) error {
-	for _, key := range []string{OpenAIForceFastExtraKey, OpenAIFreeFastExtraKey, OpenAIFreeUltrafastExtraKey} {
+	for _, key := range []string{OpenAIForceFastExtraKey, OpenAIFreeFastExtraKey, OpenAIForceUltrafastExtraKey, OpenAIFreeUltrafastExtraKey} {
 		if value, exists := extra[key]; exists {
 			if _, ok := value.(bool); !ok {
 				return infraerrors.BadRequest("OPENAI_ACCOUNT_FAST_INVALID", key+" must be a boolean")
@@ -33,10 +36,25 @@ func accountOpenAIFastEnabled(account *Account, key string) bool {
 	return enabled
 }
 
-// openAIRequestForcedServiceTier preserves the group's model and entitlement
-// checks for Ultrafast. The selected account can also force priority before
-// the global policy runs.
+func openAIAccountSupportsUltrafast(account *Account, model string) bool {
+	if account == nil || !account.IsOpenAI() || !openAIModelSupportsUltrafast(model) {
+		return false
+	}
+	// GPT-6.2 subscription access comes from the Pro plan or the account's model catalog.
+	base := openai.GPT62ModelID(model)
+	if base == "" || !account.IsOpenAIOAuthLike() || gpt62PlanIncludesUltrafast(account, base) {
+		return true
+	}
+	metadata, ok := account.GetUpstreamModelMetadata(base)
+	return ok && gjson.GetBytes(metadata.CodexToolCapabilities["service_tiers"], `#(id=="ultrafast")`).Exists()
+}
+
+// openAIRequestForcedServiceTier gives eligible account or group Ultrafast
+// precedence over account or group Fast before the global policy runs.
 func openAIRequestForcedServiceTier(ctx context.Context, account *Account, model string) string {
+	if accountOpenAIFastEnabled(account, OpenAIForceUltrafastExtraKey) && openAIAccountSupportsUltrafast(account, model) {
+		return OpenAIFastTierUltrafast
+	}
 	if tier := openAIGroupForcedServiceTier(ctx, account, model); tier != "" {
 		return tier
 	}

@@ -655,6 +655,8 @@ export default {
         free: 'Free Fast',
         freeHint: 'Charge customers Standard prices for this account’s Fast requests while requesting Fast upstream. This setting does not enable Fast by itself.',
         inheritHint: 'Either the account or the group can enable a regular Fast setting.',
+        forceUltrafast: 'Force Ultra Fast (ultrafast)',
+        forceUltrafastHint: 'Use Ultra Fast when the model and account are eligible. Otherwise, use Force Fast if enabled or follow the client’s tier. The global Fast/Flex policy still applies.',
         freeUltrafast: 'Free Ultra Fast',
         freeUltrafastHint: 'Charge customers Standard prices for requests this account forwards at Ultra Fast.'
       },
